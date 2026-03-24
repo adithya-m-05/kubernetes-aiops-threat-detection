@@ -1,48 +1,33 @@
-# =========================
-# Python
-# =========================
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.log
-*.sqlite3
-
-# =========================
-# Virtual Environment
-# =========================
+# Virtual environments
 .venv/
 venv/
-env/
 
-# =========================
-# Testing / Cache
-# =========================
+# Python cache
+__pycache__/
+*.pyc
 .pytest_cache/
-.coverage
-htmlcov/
 
-# =========================
-# Datasets (DO NOT COMMIT)
-# =========================
+# Datasets (IMPORTANT)
 boa_dataset/
-dwa_dataset/
+dvwa_dataset/
+data_pipeline/output/
+data_pipeline/processed/
 
-# =========================
-# Generated Outputs
-# =========================
-test_output.txt
-*.out
+# Large files
+*.csv
+*.pcap
+*.zip
+*.tar
+*.tar.gz
+
+# Logs & temp
+*.log
 *.tmp
 
-# =========================
-# IDE / Editor
-# =========================
+# IDE
 .vscode/
 .idea/
 
-# =========================
-# OS Files
-# =========================
+# OS
 .DS_Store
 Thumbs.db
