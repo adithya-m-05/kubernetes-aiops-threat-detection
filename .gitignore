@@ -1,0 +1,48 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.sqlite3
+
+# =========================
+# Virtual Environment
+# =========================
+.venv/
+venv/
+env/
+
+# =========================
+# Testing / Cache
+# =========================
+.pytest_cache/
+.coverage
+htmlcov/
+
+# =========================
+# Datasets (DO NOT COMMIT)
+# =========================
+boa_dataset/
+dwa_dataset/
+
+# =========================
+# Generated Outputs
+# =========================
+test_output.txt
+*.out
+*.tmp
+
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# OS Files
+# =========================
+.DS_Store
+Thumbs.db

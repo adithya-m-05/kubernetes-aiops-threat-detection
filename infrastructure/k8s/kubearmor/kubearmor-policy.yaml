@@ -1,0 +1,159 @@
+# =============================================================================
+# KubeArmor Security Policies — eBPF-based Container Hardening
+# =============================================================================
+# Purpose:
+#   These KubeArmor policies use eBPF probes to enforce fine-grained
+#   security restrictions on containers in the aiops-security namespace.
+#
+# Why KubeArmor + eBPF?
+#   Traditional security mechanisms (AppArmor, SELinux) require
+#   per-host configuration. KubeArmor provides Kubernetes-native
+#   security policies enforced via eBPF probes (BPF-LSM), offering:
+#   1. Process-level whitelisting — only allowed binaries can execute
+#   2. File-level access control — restrict /proc, /sys, secrets
+#   3. Network-level filtering — protocol-aware traffic control
+#   4. Real-time telemetry — JSON events for security analytics
+#
+# Policy Design (researched from official KubeArmor docs):
+#   - Default action: Block (least-permissive posture)
+#   - Recursive directory matching for comprehensive coverage
+#   - Severity scale 1-10 for prioritizing alerts
+#
+# References:
+#   - KubeArmor Docs: https://docs.kubearmor.io/
+#   - KubeArmor Policy Spec: https://docs.kubearmor.io/documentation/getting-started/security_policy_specification
+# =============================================================================
+
+---
+# ---------------------------------------------------------------------------
+# Policy 1: Restrict procfs and sysfs access
+# ---------------------------------------------------------------------------
+# MITRE ATT&CK: T1611 (Escape to Host), T1613 (Container Discovery)
+#
+# Academic Rationale:
+#   /proc and /sys expose kernel internals to containers. An attacker
+#   can read /proc/1/root to access the host filesystem, /proc/kcore
+#   for kernel memory, or /sys/kernel for kernel parameters. Restricting
+#   these paths is a fundamental container hardening measure.
+# ---------------------------------------------------------------------------
+apiVersion: security.kubearmor.com/v1
+kind: KubeArmorPolicy
+metadata:
+  name: restrict-procfs-sysfs
+  namespace: aiops-security
+spec:
+  severity: 8
+  selector:
+    matchLabels:
+      app: vulnerable-testbed
+  file:
+    matchDirectories:
+      # Block all access to /proc except /proc/self (required by many runtimes)
+      - dir: /proc/
+        recursive: true
+        action: Block
+      # Block access to host kernel parameters
+      - dir: /sys/
+        recursive: true
+        action: Block
+      # Block access to kernel debugging interfaces
+      - dir: /proc/kcore
+        recursive: false
+        action: Block
+      - dir: /proc/kmsg
+        recursive: false
+        action: Block
+    matchPaths:
+      # Specifically block the most dangerous procfs paths
+      - path: /proc/sysrq-trigger
+        action: Block
+      - path: /proc/sched_debug
+        action: Block
+      - path: /proc/timer_list
+        action: Block
+  message: "Blocked access to sensitive procfs/sysfs path"
+  action: Block
+
+---
+# ---------------------------------------------------------------------------
+# Policy 2: Process execution whitelisting
+# ---------------------------------------------------------------------------
+# MITRE ATT&CK: T1609 (Container Administration Command)
+#
+# Academic Rationale:
+#   Containers should only execute their intended application binaries.
+#   Allowing arbitrary process execution enables attackers to run
+#   reconnaissance tools (nmap, curl, wget) or exploitation payloads.
+#   Process whitelisting enforces the principle of least privilege.
+# ---------------------------------------------------------------------------
+apiVersion: security.kubearmor.com/v1
+kind: KubeArmorPolicy
+metadata:
+  name: process-whitelisting
+  namespace: aiops-security
+spec:
+  severity: 7
+  selector:
+    matchLabels:
+      app: vulnerable-testbed
+      component: api-backend
+  process:
+    matchDirectories:
+      # Allow only Python execution for the API backend
+      - dir: /usr/local/bin/
+        recursive: true
+      - dir: /usr/local/lib/python3.11/
+        recursive: true
+    matchPaths:
+      # Explicitly block known attack tools
+      - path: /usr/bin/nmap
+        action: Block
+      - path: /usr/bin/nc
+        action: Block
+      - path: /usr/bin/ncat
+        action: Block
+      - path: /usr/bin/curl
+        action: Block
+      - path: /usr/bin/wget
+        action: Block
+  message: "Unauthorized process execution blocked"
+  action: Allow
+
+---
+# ---------------------------------------------------------------------------
+# Policy 3: Network telemetry and control
+# ---------------------------------------------------------------------------
+# MITRE ATT&CK: T1046 (Network Service Discovery)
+#
+# Academic Rationale:
+#   eBPF-based network monitoring captures all network events at the
+#   kernel level without requiring a sidecar proxy. This policy:
+#   1. Allows TCP (application traffic) and UDP (DNS)
+#   2. Blocks raw sockets (used for port scanning, packet crafting)
+#   3. Generates telemetry for all network events (Audit action)
+# ---------------------------------------------------------------------------
+apiVersion: security.kubearmor.com/v1
+kind: KubeArmorPolicy
+metadata:
+  name: network-telemetry-control
+  namespace: aiops-security
+spec:
+  severity: 6
+  selector:
+    matchLabels:
+      app: vulnerable-testbed
+  network:
+    matchProtocols:
+      # Allow standard application protocols
+      - protocol: TCP
+        action: Allow
+      - protocol: UDP
+        action: Allow
+      # Block raw sockets — used for port scanning and packet injection
+      - protocol: raw
+        action: Block
+      # Audit ICMP — could indicate network reconnaissance (ping sweep)
+      - protocol: ICMP
+        action: Audit
+  message: "Network policy violation detected"
+  action: Block

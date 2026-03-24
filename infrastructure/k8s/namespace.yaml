@@ -1,0 +1,24 @@
+# =============================================================================
+# Namespace: aiops-security
+# =============================================================================
+# Purpose:
+#   Provides a dedicated Kubernetes namespace to isolate all project resources.
+#   This namespace-level isolation is a DevSecOps best practice — it ensures
+#   that RBAC policies, NetworkPolicies, and resource quotas can be scoped
+#   precisely to our testbed and monitoring stack without affecting other
+#   workloads on the cluster.
+#
+# Usage:
+#   kubectl apply -f namespace.yaml
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aiops-security
+  labels:
+    # Label used by NetworkPolicies and Falco rules to scope monitoring
+    project: aiops-threat-intelligence
+    environment: development
+    # Academic metadata
+    institution: nmit
+    department: ise

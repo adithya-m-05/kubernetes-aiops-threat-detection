@@ -1,0 +1,207 @@
+# =============================================================================
+# Vulnerable Microservices Testbed — Deployment Manifests
+# =============================================================================
+# Purpose:
+#   This file deploys a deliberately vulnerable multi-container application
+#   that serves as our attack simulation testbed. The application consists of:
+#
+#   1. web-frontend  — An nginx-based web server (attack surface for web exploits)
+#   2. api-backend   — A Python Flask API (attack surface for injection, RCE)
+#   3. redis-cache   — An in-memory data store (attack surface for data exfil)
+#
+# Security Note:
+#   These containers are intentionally configured with permissive security
+#   contexts (e.g., no readOnlyRootFilesystem, no dropped capabilities) to
+#   allow Falco and KubeArmor to detect and demonstrate real attack patterns.
+#   DO NOT deploy this to a production cluster.
+#
+# Academic Rationale:
+#   A multi-tier microservices architecture is representative of real-world
+#   containerized applications. By deploying known-vulnerable components, we
+#   can generate authentic telemetry for training our ML models without
+#   relying on synthetic data alone.
+# =============================================================================
+
+---
+# ---------------------------------------------------------------------------
+# Deployment: web-frontend
+# ---------------------------------------------------------------------------
+# Simulates a customer-facing web application. Nginx is configured with
+# default settings (no hardening) to allow directory traversal and
+# information disclosure attacks.
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-frontend
+  namespace: aiops-security
+  labels:
+    app: vulnerable-testbed
+    component: web-frontend
+    tier: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vulnerable-testbed
+      component: web-frontend
+  template:
+    metadata:
+      labels:
+        app: vulnerable-testbed
+        component: web-frontend
+        tier: frontend
+        # Labels used by Falco rules and NetworkPolicies
+        security-zone: untrusted
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+              name: http
+          # Intentionally permissive security context for attack simulation
+          # In production, you would add:
+          #   readOnlyRootFilesystem: true
+          #   runAsNonRoot: true
+          #   capabilities: { drop: ["ALL"] }
+          securityContext:
+            allowPrivilegeEscalation: false
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          # Health checks ensure Kubernetes can detect container compromise
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 5
+
+---
+# ---------------------------------------------------------------------------
+# Deployment: api-backend
+# ---------------------------------------------------------------------------
+# Simulates a backend API service. Uses a Python image that could be
+# exploited via command injection or insecure deserialization. The container
+# runs a simple HTTP server for demonstration purposes.
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-backend
+  namespace: aiops-security
+  labels:
+    app: vulnerable-testbed
+    component: api-backend
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vulnerable-testbed
+      component: api-backend
+  template:
+    metadata:
+      labels:
+        app: vulnerable-testbed
+        component: api-backend
+        tier: backend
+        security-zone: internal
+    spec:
+      containers:
+        - name: api
+          image: python:3.11-slim
+          # Start a simple HTTP server — in a real scenario, this would be
+          # a Flask/FastAPI application with exploitable endpoints
+          command: ["python", "-m", "http.server", "8080"]
+          ports:
+            - containerPort: 8080
+              name: api
+          # Deliberately not dropping capabilities — allows privilege
+          # escalation attempts that Falco will detect
+          securityContext:
+            allowPrivilegeEscalation: true  # Intentionally insecure
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          env:
+            # Simulated sensitive environment variable (poor secret management)
+            - name: DATABASE_URL
+              value: "postgresql://admin:password123@db:5432/app"
+            - name: API_SECRET_KEY
+              value: "insecure-secret-key-for-testing"
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+
+---
+# ---------------------------------------------------------------------------
+# Deployment: redis-cache
+# ---------------------------------------------------------------------------
+# Simulates an in-memory data store. Redis without authentication is a
+# common misconfiguration that enables data exfiltration attacks.
+# Falco rules will monitor for unauthorized access patterns.
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-cache
+  namespace: aiops-security
+  labels:
+    app: vulnerable-testbed
+    component: redis-cache
+    tier: data
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vulnerable-testbed
+      component: redis-cache
+  template:
+    metadata:
+      labels:
+        app: vulnerable-testbed
+        component: redis-cache
+        tier: data
+        security-zone: restricted
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          # Running Redis without --requirepass is intentionally insecure
+          # This simulates a common misconfiguration in containerized deployments
+          command: ["redis-server"]
+          ports:
+            - containerPort: 6379
+              name: redis
+          securityContext:
+            allowPrivilegeEscalation: false
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10

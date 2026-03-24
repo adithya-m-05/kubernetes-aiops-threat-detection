@@ -1,0 +1,92 @@
+# =============================================================================
+# Vulnerable Microservices Testbed — Service Definitions
+# =============================================================================
+# Purpose:
+#   Exposes the testbed deployments as Kubernetes Services so they can
+#   communicate internally (ClusterIP) and be accessed externally (NodePort)
+#   for testing. The service mesh creates realistic network traffic patterns
+#   that our telemetry pipeline can capture and analyze.
+#
+# Network Architecture:
+#   External → NodePort:30080 → web-frontend:80
+#   web-frontend:80 → ClusterIP → api-backend:8080
+#   api-backend:8080 → ClusterIP → redis-cache:6379
+# =============================================================================
+
+---
+# ---------------------------------------------------------------------------
+# Service: web-frontend (NodePort — externally accessible)
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-frontend
+  namespace: aiops-security
+  labels:
+    app: vulnerable-testbed
+    component: web-frontend
+spec:
+  type: NodePort
+  selector:
+    app: vulnerable-testbed
+    component: web-frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30080
+      protocol: TCP
+      name: http
+
+---
+# ---------------------------------------------------------------------------
+# Service: api-backend (ClusterIP — internal only)
+# ---------------------------------------------------------------------------
+# ClusterIP restricts access to cluster-internal traffic only.
+# This simulates a backend service that should not be directly accessible
+# from outside — any external access attempt indicates lateral movement.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-backend
+  namespace: aiops-security
+  labels:
+    app: vulnerable-testbed
+    component: api-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: vulnerable-testbed
+    component: api-backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: api
+
+---
+# ---------------------------------------------------------------------------
+# Service: redis-cache (ClusterIP — internal only)
+# ---------------------------------------------------------------------------
+# Redis should only be accessible from the api-backend tier.
+# Direct access from web-frontend or external sources is an indicator
+# of compromise (IoC) that our ML engine should detect.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cache
+  namespace: aiops-security
+  labels:
+    app: vulnerable-testbed
+    component: redis-cache
+spec:
+  type: ClusterIP
+  selector:
+    app: vulnerable-testbed
+    component: redis-cache
+  ports:
+    - port: 6379
+      targetPort: 6379
+      protocol: TCP
+      name: redis

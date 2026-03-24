@@ -1,0 +1,163 @@
+# =============================================================================
+# Falco Runtime Security — DaemonSet Deployment
+# =============================================================================
+# Purpose:
+#   Deploys Falco as a DaemonSet so it runs on every node in the cluster.
+#   Falco uses a kernel module (or eBPF probe) to intercept system calls
+#   and evaluate them against a set of security rules in real time.
+#
+# Why Falco?
+#   Falco is the de-facto standard for Kubernetes runtime security (CNCF
+#   graduated project). It detects:
+#   - Unexpected process execution inside containers
+#   - Reads/writes to sensitive files (/etc/shadow, /etc/passwd)
+#   - Network connections to unusual destinations
+#   - Privilege escalation attempts (setuid, capabilities changes)
+#   - Container escape attempts (mount namespace breakout)
+#
+# Architecture:
+#   Falco runs as a privileged container with access to the host's /dev,
+#   /proc, /boot, and kernel headers. It outputs JSON-formatted alerts
+#   to stdout, which are collected by our log_aggregator.py.
+#
+# References:
+#   - Falco Documentation: https://falco.org/docs/
+#   - Falco Rules Reference: https://falco.org/docs/reference/rules/
+# =============================================================================
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: falco
+  namespace: aiops-security
+  labels:
+    app: falco
+    component: runtime-security
+    project: aiops-threat-intelligence
+spec:
+  selector:
+    matchLabels:
+      app: falco
+  updateStrategy:
+    # RollingUpdate ensures continuous monitoring during upgrades
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: falco
+        component: runtime-security
+    spec:
+      # Falco must run on every node to capture all system calls
+      # Tolerations ensure it runs on master/control-plane nodes too
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          effect: NoSchedule
+
+      # Use host PID namespace to see all processes on the node
+      hostPID: true
+      # Use host network to capture network-level telemetry
+      hostNetwork: true
+      # DNS policy must be set when using host network
+      dnsPolicy: ClusterFirstWithHostNet
+
+      containers:
+        - name: falco
+          image: falcosecurity/falco-no-driver:0.37.1
+          # --------------------------------------------------
+          # Why falco-no-driver?
+          # In environments where kernel module loading is
+          # restricted (e.g., managed K8s, Minikube with
+          # containerd), the eBPF probe is preferred over
+          # the kernel module. This image ships without the
+          # kernel module, relying on eBPF instead.
+          # --------------------------------------------------
+          args:
+            - /usr/bin/falco
+            - --cri
+            - /run/containerd/containerd.sock
+            - -K
+            - /var/run/secrets/kubernetes.io/serviceaccount/token
+            - -k
+            - https://$(KUBERNETES_SERVICE_HOST)
+            - --k8s-node
+            - $(FALCO_K8S_NODE_NAME)
+            - -o
+            # JSON output is critical for our log_aggregator.py pipeline
+            - json_output=true
+            - -o
+            - json_include_output_property=true
+            - -o
+            # Include tags for MITRE ATT&CK mapping
+            - json_include_tags_property=true
+
+          env:
+            - name: FALCO_K8S_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            # Enable eBPF probe instead of kernel module
+            - name: FALCO_BPF_PROBE
+              value: ""
+
+          # Privileged mode required for eBPF probe loading and
+          # access to the kernel's system call table
+          securityContext:
+            privileged: true
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+          volumeMounts:
+            # /dev is needed for the eBPF probe to access kernel data
+            - name: dev-fs
+              mountPath: /host/dev
+              readOnly: true
+            # /proc provides process information for enriching alerts
+            - name: proc-fs
+              mountPath: /host/proc
+              readOnly: true
+            # /boot and /lib/modules provide kernel headers for eBPF
+            - name: boot-fs
+              mountPath: /host/boot
+              readOnly: true
+            - name: lib-modules
+              mountPath: /host/lib/modules
+              readOnly: true
+            # Container runtime socket for container metadata enrichment
+            - name: containerd-socket
+              mountPath: /run/containerd/containerd.sock
+              readOnly: true
+            # Custom rules from our ConfigMap
+            - name: falco-config
+              mountPath: /etc/falco/falco_rules.local.yaml
+              subPath: falco_rules.local.yaml
+              readOnly: true
+
+      volumes:
+        - name: dev-fs
+          hostPath:
+            path: /dev
+        - name: proc-fs
+          hostPath:
+            path: /proc
+        - name: boot-fs
+          hostPath:
+            path: /boot
+        - name: lib-modules
+          hostPath:
+            path: /lib/modules
+        - name: containerd-socket
+          hostPath:
+            path: /run/containerd/containerd.sock
+        - name: falco-config
+          configMap:
+            name: falco-rules
