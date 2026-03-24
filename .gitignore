@@ -31,3 +31,5 @@ data_pipeline/processed/
 # OS
 .DS_Store
 Thumbs.db
+
+test_output.txt
