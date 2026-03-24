@@ -105,6 +105,16 @@ FYP/
 
 ---
 
+## Datasets
+
+The machine learning models in this project are designed to be trained on the **BOA Network Dataset** (`boa_dataset/`) and the **DVWA Exploit Dataset** (`dvwa_dataset/`). 
+
+> **Note:** Due to their large size, the raw and processed CSV datasets, PCAP files, and other generated artifacts are excluded from this repository. 
+
+If you are cloning this project, you will need to download these datasets (e.g., from Kaggle) and place them in the root directory under the `boa_dataset/` and `dvwa_dataset/` folders. Alternatively, you can use the built-in `mock_data_generator.py` to test the pipeline without downloading the full datasets.
+
+---
+
 ## Quick Start
 
 ### Prerequisites
@@ -141,9 +151,13 @@ python data_pipeline/mock_data_generator.py
 # 2. Run the preprocessing pipeline
 python data_pipeline/preprocessing.py
 
-# 3. Train ML models
+# 3. Train ML models (using default mock data)
 python ml_engine/autoencoder.py --train
 python ml_engine/random_forest_classifier.py --train
+
+# Alternatively, train using a specific downloaded dataset (e.g., DVWA):
+# python ml_engine/autoencoder.py --train --data "dvwa_dataset\processed\dvwa_dataset_ml_ready.csv"
+# python ml_engine/random_forest_classifier.py --train --data "dvwa_dataset\processed\dvwa_dataset_ml_ready.csv"
 
 # 4. Start the response engine webhook
 python response_engine/webhook_server.py
