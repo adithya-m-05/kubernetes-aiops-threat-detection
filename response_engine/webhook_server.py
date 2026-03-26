@@ -41,6 +41,7 @@ from typing import Dict, Any
 from collections import deque
 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 # Import response modules (graceful import for standalone testing)
 try:
@@ -55,6 +56,7 @@ logger = logging.getLogger("webhook_server")
 
 # Flask application
 app = Flask(__name__)
+CORS(app)
 
 # Configuration (can be overridden via environment variables)
 CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", "0.85"))

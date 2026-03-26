@@ -50,12 +50,12 @@ The system demonstrates the intersection of **DevSecOps**, **data engineering**,
               │  • Bayesian → MITRE     │
               └────────────┬────────────┘
                            ▼
-              ┌─────────────────────────┐
-              │   Response Engine       │
-              │  • Webhook API          │
-              │  • NetworkPolicy Gen    │
-              │  • Pod Migration        │
-              └─────────────────────────┘
+              ┌─────────────────────────┐   ┌─────────────────────────┐
+              │   Response Engine       │   │   SOC Dashboard (UI)    │
+              │  • Webhook API          │◄──┤  • Live Alerts Table    │
+              │  • NetworkPolicy Gen    │   │  • Response Timeline    │
+              │  • Pod Migration        │   │  • Entity Status Grid   │
+              └─────────────────────────┘   └─────────────────────────┘
 ```
 
 ---
@@ -86,6 +86,10 @@ FYP/
 │   ├── webhook_server.py
 │   ├── network_policy_manager.py
 │   └── pod_migration.py
+├── dashboard/               # Agent 5 — UI / SOC Dashboard
+│   ├── index.html           # Main Application Shell
+│   ├── js/                  # api.js, app.js, charts.js, components.js
+│   └── css/                 # base.css, layout.css, components.css
 ├── tests/                   # Unit and integration tests
 ├── docs/                    # Architecture documentation
 └── requirements.txt
@@ -102,6 +106,7 @@ FYP/
 | **Data Pipeline**  | Python, Pandas, Scikit-learn, imbalanced-learn    |
 | **ML Engine**      | PyTorch (Autoencoder), Scikit-learn (Random Forest), pgmpy (Bayesian Network) |
 | **Orchestration**  | Python Kubernetes Client, Flask                   |
+| **Frontend UI**    | HTML5, Vanilla CSS, Vanilla JavaScript, Chart.js  |
 
 ---
 
@@ -159,10 +164,14 @@ python ml_engine/random_forest_classifier.py --train
 # python ml_engine/autoencoder.py --train --data "dvwa_dataset\processed\dvwa_dataset_ml_ready.csv"
 # python ml_engine/random_forest_classifier.py --train --data "dvwa_dataset\processed\dvwa_dataset_ml_ready.csv"
 
-# 4. Start the response engine webhook
-python response_engine/webhook_server.py
+# 4. Start the response engine webhook (API for the dashboard)
+python response_engine/webhook_server.py --port 5000
 
-# 5. Run tests
+# 5. Start the SOC Dashboard frontend (Run in a new terminal)
+npx -y serve dashboard -l 3333
+# Open http://localhost:3333 in your browser
+
+# 6. Run tests
 pytest tests/ -v
 ```
 

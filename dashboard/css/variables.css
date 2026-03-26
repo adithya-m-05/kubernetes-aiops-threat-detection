@@ -1,0 +1,147 @@
+/* ═══════════════════════════════════════════════════════
+   Design Tokens — SOC Dashboard
+   ═══════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Typography ───────────────────────────────────── */
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --fs-xs: 0.6875rem;   /* 11px */
+  --fs-sm: 0.75rem;     /* 12px */
+  --fs-base: 0.8125rem; /* 13px */
+  --fs-md: 0.875rem;    /* 14px */
+  --fs-lg: 1rem;        /* 16px */
+  --fs-xl: 1.25rem;     /* 20px */
+  --fs-2xl: 1.5rem;     /* 24px */
+  --fs-3xl: 2rem;       /* 32px */
+
+  /* ── Spacing ──────────────────────────────────────── */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+
+  /* ── Radii & Shadows ──────────────────────────────── */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* ── Transitions ──────────────────────────────────── */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
+
+  /* ── Sidebar ──────────────────────────────────────── */
+  --sidebar-width: 240px;
+  --header-height: 56px;
+}
+
+/* ═══════════════════════════════  DARK THEME (default)  */
+[data-theme="dark"], :root {
+  --bg-primary: #0a0e1a;
+  --bg-secondary: #111827;
+  --bg-card: #1a2035;
+  --bg-card-hover: #1e2744;
+  --bg-panel: #141b2d;
+  --bg-input: #0f1629;
+  --bg-overlay: rgba(0, 0, 0, 0.6);
+
+  --border-default: rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(255, 255, 255, 0.12);
+  --border-active: rgba(99, 148, 255, 0.4);
+
+  --text-primary: #e8ecf4;
+  --text-secondary: #8b95a9;
+  --text-tertiary: #5a6580;
+  --text-inverse: #0a0e1a;
+
+  /* ── Semantic colours ─────────────────────────────── */
+  --color-safe: #00e676;
+  --color-safe-bg: rgba(0, 230, 118, 0.08);
+  --color-safe-border: rgba(0, 230, 118, 0.25);
+
+  --color-warning: #ffc107;
+  --color-warning-bg: rgba(255, 193, 7, 0.08);
+  --color-warning-border: rgba(255, 193, 7, 0.25);
+
+  --color-critical: #ff1744;
+  --color-critical-bg: rgba(255, 23, 68, 0.08);
+  --color-critical-border: rgba(255, 23, 68, 0.25);
+
+  --color-info: #448aff;
+  --color-info-bg: rgba(68, 138, 255, 0.08);
+  --color-info-border: rgba(68, 138, 255, 0.25);
+
+  --color-accent: #7c4dff;
+  --color-accent-bg: rgba(124, 77, 255, 0.08);
+
+  /* ── Chart palette ────────────────────────────────── */
+  --chart-1: #448aff;
+  --chart-2: #7c4dff;
+  --chart-3: #00e676;
+  --chart-4: #ffc107;
+  --chart-5: #ff1744;
+  --chart-6: #00bcd4;
+
+  /* ── Shadows ──────────────────────────────────────── */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,0.6);
+  --shadow-glow-critical: 0 0 20px rgba(255,23,68,0.3);
+  --shadow-glow-safe: 0 0 20px rgba(0,230,118,0.2);
+  --shadow-glow-blue: 0 0 20px rgba(68,138,255,0.25);
+}
+
+/* ═══════════════════════════════  LIGHT THEME  ══════════ */
+[data-theme="light"] {
+  --bg-primary: #f0f2f5;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8f9fc;
+  --bg-panel: #f5f7fa;
+  --bg-input: #eef1f6;
+  --bg-overlay: rgba(0, 0, 0, 0.3);
+
+  --border-default: rgba(0, 0, 0, 0.08);
+  --border-hover: rgba(0, 0, 0, 0.15);
+  --border-active: rgba(68, 138, 255, 0.5);
+
+  --text-primary: #1a1f36;
+  --text-secondary: #5a6580;
+  --text-tertiary: #8b95a9;
+  --text-inverse: #ffffff;
+
+  --color-safe: #00c853;
+  --color-safe-bg: rgba(0, 200, 83, 0.08);
+  --color-safe-border: rgba(0, 200, 83, 0.3);
+
+  --color-warning: #ff9800;
+  --color-warning-bg: rgba(255, 152, 0, 0.08);
+  --color-warning-border: rgba(255, 152, 0, 0.3);
+
+  --color-critical: #d50000;
+  --color-critical-bg: rgba(213, 0, 0, 0.06);
+  --color-critical-border: rgba(213, 0, 0, 0.25);
+
+  --color-info: #2962ff;
+  --color-info-bg: rgba(41, 98, 255, 0.06);
+  --color-info-border: rgba(41, 98, 255, 0.25);
+
+  --color-accent: #6200ea;
+  --color-accent-bg: rgba(98, 0, 234, 0.06);
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,0.12);
+  --shadow-glow-critical: 0 0 15px rgba(213,0,0,0.15);
+  --shadow-glow-safe: 0 0 15px rgba(0,200,83,0.12);
+  --shadow-glow-blue: 0 0 15px rgba(41,98,255,0.12);
+}
