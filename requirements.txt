@@ -26,6 +26,7 @@ kubernetes>=28.1.0
 
 # --- Webhook API Server ---
 flask>=3.0.0
+flask-cors>=4.0.0
 
 # --- Telemetry Log Aggregation ---
 watchdog>=3.0.0
