@@ -3,7 +3,6 @@
 Network Policy Manager — Dynamic Pod Isolation via Kubernetes API
 =============================================================================
 Module: response_engine/network_policy_manager.py
-Agent:  Agent 4 — "The Enforcer"
 
 Purpose:
     Dynamically creates and applies Kubernetes NetworkPolicy objects to
@@ -36,6 +35,7 @@ Usage:
 
 import logging
 import json
+import os
 from datetime import datetime, timezone
 from typing import Optional, Dict
 
@@ -60,18 +60,23 @@ class NetworkPolicyManager:
     - Audit logging of all policy changes
     """
 
-    def __init__(self, kubeconfig: Optional[str] = None):
+    def __init__(self, kubeconfig: Optional[str] = None, dry_run: Optional[bool] = None):
         """
         Initialize the Kubernetes client.
 
         Attempts in-cluster config first (for when running as a pod),
         then falls back to kubeconfig file (for local development).
+        If dry_run is True, skips all live API calls.
         """
         self.audit_log = []
+        if dry_run is None:
+            self.dry_run = os.environ.get("DRY_RUN", "true").lower() in ("true", "1", "yes")
+        else:
+            self.dry_run = dry_run
 
         self.networking_api = None
         self.core_api = None
-        if K8S_AVAILABLE:
+        if K8S_AVAILABLE and not self.dry_run:
             k8s_loaded = False
             try:
                 config.load_incluster_config()

@@ -3,11 +3,10 @@
 Preprocessing Module — JSON Telemetry Ingestion and Cleaning
 =============================================================================
 Module: data_pipeline/preprocessing.py
-Agent:  Agent 2 — "The Cleaner"
 
 Purpose:
-    Ingests the unified JSON telemetry logs produced by Agent 1's
-    log_aggregator.py and transforms them into clean, ML-ready DataFrames.
+    Ingests Falco JSON telemetry logs (or mock data matching the same
+    schema) and transforms them into clean, ML-ready DataFrames.
 
 Pipeline Stages:
     1. JSON Ingestion   → Read NDJSON files into raw DataFrames

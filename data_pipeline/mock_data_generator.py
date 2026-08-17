@@ -1,26 +1,27 @@
 """
 =============================================================================
-Mock Data Generator — Synthetic Benign and Malicious Telemetry
+Mock Data Generator — Synthetic Falco Telemetry (Benign + Malicious)
 =============================================================================
 Module: data_pipeline/mock_data_generator.py
-Agent:  Agent 2 — "The Cleaner"
 
 Purpose:
-    Generates realistic synthetic telemetry data for testing the full
-    pipeline without requiring a live Kubernetes cluster. Produces both
-    benign and malicious events matching the unified telemetry schema.
+    Generates realistic synthetic Falco-format telemetry data for testing
+    the full detection pipeline without a live Kubernetes cluster. Produces
+    both benign and malicious events matching the unified telemetry schema.
+
+    All events use source="falco" to reflect the project's focus on
+    Falco as the single runtime telemetry source.
 
 Attack Types Simulated:
     - DDoS flood (high event rate, many connections, single target)
     - Data exfiltration (large outbound traffic, unusual ports)
-    - Lateral movement (port scanning, multiple internal IPs)
-    - Crypto mining (high CPU syscalls, stratum connections)
-    - Container escape (procfs access, namespace manipulation)
+    - Lateral movement / network scanning (port scanning, multiple IPs)
+    - Crypto mining (mining process, stratum protocol connections)
+    - Container escape (procfs/namespace manipulation, privilege escalation)
 
 Usage:
     python mock_data_generator.py --output mock_telemetry.jsonl --events 5000
-=============================================================================
-"""
+============================================================================="""
 
 import json
 import uuid
@@ -37,7 +38,7 @@ logger = logging.getLogger("mock_data_generator")
 PODS = ["web-frontend-abc12", "web-frontend-def34", "api-backend-ghi56",
         "api-backend-jkl78", "redis-cache-mno90"]
 NAMESPACES = ["aiops-security"]
-SOURCES = ["falco", "kubearmor"]
+SOURCES = ["falco"]
 INTERNAL_IPS = ["10.244.0.5", "10.244.0.6", "10.244.0.7", "10.244.1.2", "10.244.1.3"]
 EXTERNAL_IPS = ["203.0.113.10", "198.51.100.25", "192.0.2.50", "45.33.32.156"]
 BENIGN_SYSCALLS = ["read", "write", "close", "fstat", "mmap", "mprotect",
@@ -51,7 +52,7 @@ def generate_benign_event(base_time):
     pod = random.choice(PODS)
     return {
         "timestamp": (base_time + timedelta(seconds=random.uniform(0, 60))).isoformat(),
-        "source": random.choice(SOURCES),
+        "source": "falco",
         "event_id": str(uuid.uuid4()),
         "pod": pod,
         "namespace": "aiops-security",
@@ -130,7 +131,7 @@ def generate_lateral_movement_event(base_time):
     """Generate lateral movement event (port scanning internal network)."""
     return {
         "timestamp": (base_time + timedelta(milliseconds=random.randint(0, 500))).isoformat(),
-        "source": "kubearmor",
+        "source": "falco",
         "event_id": str(uuid.uuid4()),
         "pod": "api-backend-jkl78",
         "namespace": "aiops-security",
@@ -149,6 +150,26 @@ def generate_lateral_movement_event(base_time):
         "mitre_technique": "T1046",
         "raw_event": {},
         "label": "lateral_movement"
+    }
+
+
+def generate_container_escape_event(base_time):
+    """Generate container escape / privilege escalation event."""
+    return {
+        "timestamp": (base_time + timedelta(seconds=random.uniform(0, 30))).isoformat(),
+        "source": "falco",
+        "event_id": str(uuid.uuid4()),
+        "pod": random.choice(PODS),
+        "namespace": "aiops-security",
+        "container_id": f"containerd://{uuid.uuid4().hex[:12]}",
+        "severity": "CRITICAL",
+        "event_type": "container_escape",
+        "syscall": random.choice(["setns", "unshare", "mount", "ptrace"]),
+        "process": random.choice(["bash", "nsenter", "runc"]),
+        "network_metadata": None,
+        "mitre_technique": "T1611",
+        "raw_event": {},
+        "label": "container_escape"
     }
 
 
@@ -200,7 +221,8 @@ def generate_dataset(num_events=5000, attack_ratio=0.2, seed=42):
 
     # Generate attack events (distributed across types)
     attack_generators = [generate_ddos_event, generate_exfiltration_event,
-                         generate_lateral_movement_event, generate_crypto_mining_event]
+                         generate_lateral_movement_event, generate_crypto_mining_event,
+                         generate_container_escape_event]
     attacks_per_type = num_attack // len(attack_generators)
 
     for gen_func in attack_generators:

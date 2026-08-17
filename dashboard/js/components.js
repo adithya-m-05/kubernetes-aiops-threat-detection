@@ -240,7 +240,7 @@ function renderAlertDetail(panel, overlay, alert) {
     <div class="detail-field">
       <div class="detail-field__label">Response Action</div>
       <div class="detail-field__value">
-        <span class="badge ${alert.responseAction === 'Isolation' ? 'badge--critical' : alert.responseAction === 'Migration' ? 'badge--high' : 'badge--medium'}">${alert.responseAction}</span>
+        <span class="badge ${alert.responseAction === 'Isolation' ? 'badge--critical' : 'badge--medium'}">${alert.responseAction}</span>
       </div>
     </div>
   `;
@@ -254,7 +254,6 @@ function renderResponseTimeline(container, actions) {
   const dotClass = (type) => {
     switch (type) {
       case 'Isolation': return 'timeline-item__dot--isolation';
-      case 'Migration': return 'timeline-item__dot--migration';
       case 'Monitoring': return 'timeline-item__dot--monitoring';
       case 'Resolved': return 'timeline-item__dot--resolved';
       default: return '';

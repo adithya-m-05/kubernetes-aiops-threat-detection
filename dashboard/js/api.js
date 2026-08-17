@@ -47,8 +47,8 @@
         if (a.response && a.response.actions_taken && a.response.actions_taken.length > 0) {
            const act = a.response.actions_taken[0].action;
            if (act === 'isolate_pod') responseAction = 'Isolation';
-           else if (act === 'migrate_pods' || act === 'cordon_node') responseAction = 'Migration';
-           else if (act === 'apply_audit_policy') responseAction = 'Monitoring';
+           else if (act === 'log_only') responseAction = 'Log Only';
+           else responseAction = act;
         } else if (a.action === 'below_threshold') {
            responseAction = 'Below Threshold';
         }
@@ -63,8 +63,8 @@
           anomalyScore: anomalyScore,
           technique: {
             id: techniqueId,
-            name: a.threat_type || 'Exploit',
-            tactic: a.predicted_next_stage || 'Unknown'
+            name: a.threat_type || 'Suspicious Runtime Behavior',
+            tactic: a.tactic || 'Execution / Defense Evasion'
           },
           responseAction: responseAction,
           rawResponse: a.response || null

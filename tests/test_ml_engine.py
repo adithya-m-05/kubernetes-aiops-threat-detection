@@ -1,6 +1,6 @@
 """
 Unit tests for the ML engine modules.
-Tests: Autoencoder, Random Forest, Bayesian predictor, MITRE mapping.
+Tests: Autoencoder, Random Forest (optional), MITRE mapping, Runtime Pipeline.
 """
 import sys
 import os
@@ -81,30 +81,6 @@ class TestRandomForest:
         assert probs.shape[0] == 10
 
 
-class TestBayesianPredictor:
-    def test_initialization(self):
-        from ml_engine.bayesian_attack_predictor import AttackPredictor
-        predictor = AttackPredictor()
-        assert len(predictor.STAGES) == 9
-
-    def test_prediction(self):
-        from ml_engine.bayesian_attack_predictor import AttackPredictor
-        predictor = AttackPredictor()
-        predictions = predictor.predict_next_stage(
-            {"execution": 1, "discovery": 1})
-        assert len(predictions) > 0
-        assert all("probability" in p for p in predictions)
-
-    def test_threat_assessment(self):
-        from ml_engine.bayesian_attack_predictor import AttackPredictor
-        predictor = AttackPredictor()
-        assessment = predictor.get_threat_assessment(
-            {"execution": 1, "privilege_escalation": 1})
-        assert "risk_level" in assessment
-        assert "predictions" in assessment
-        assert assessment["risk_level"] in ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
-
-
 class TestMITREMapping:
     def test_technique_lookup(self):
         from ml_engine.mitre_attack_mapping import get_technique_info
@@ -118,7 +94,28 @@ class TestMITREMapping:
         assert len(techniques) > 0
         assert any(t["id"] == "T1611" for t in techniques)
 
-    def test_kill_chain_stage(self):
+    def test_tactic_stage(self):
         from ml_engine.mitre_attack_mapping import get_tactic_stage
         stage = get_tactic_stage("T1611")
-        assert stage == 3  # privilege_escalation is stage 3
+        assert stage == 3
+
+
+class TestRuntimePipeline:
+    def test_pipeline_passthrough_event(self):
+        from ml_engine.pipeline import ThreatDetectionPipeline
+        pipeline = ThreatDetectionPipeline(model_dir=None, dry_run=True)
+        event = {
+            "pod": "api-backend-ghi56",
+            "namespace": "aiops-security",
+            "severity": "CRITICAL",
+            "event_type": "container_escape",
+            "syscall": "setns",
+            "process": "nsenter",
+            "network_metadata": {"dst_port": 4443, "dst_ip": "203.0.113.10"}
+        }
+        res = pipeline.process_event(event)
+        assert res["status"] == "processed"
+        assert res["pod"] == "api-backend-ghi56"
+        assert "anomaly_score" in res
+        assert "risk_level" in res
+        assert len(res["mitre_techniques"]) > 0

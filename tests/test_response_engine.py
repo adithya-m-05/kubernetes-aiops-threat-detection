@@ -1,6 +1,6 @@
 """
 Unit tests for the response engine modules.
-Tests: Webhook API, NetworkPolicy generation, Pod migration.
+Tests: Webhook API, Event Processing API, NetworkPolicy generation.
 """
 import sys
 import os
@@ -60,8 +60,26 @@ class TestWebhookServer:
                                content_type="application/json")
         assert response.status_code == 400
 
+    def test_raw_event_inference_endpoint(self, client):
+        event = {
+            "pod": "web-frontend-abc12",
+            "namespace": "aiops-security",
+            "severity": "CRITICAL",
+            "event_type": "shell_execution",
+            "syscall": "execve",
+            "process": "bash",
+            "network_metadata": {"dst_port": 80, "dst_ip": "10.244.0.5"}
+        }
+        response = client.post("/api/v1/event",
+                               data=json.dumps(event),
+                               content_type="application/json")
+        assert response.status_code in (200, 503)
+        if response.status_code == 200:
+            data = response.get_json()
+            assert data["status"] == "processed"
+            assert "anomaly_score" in data
+
     def test_alert_history(self, client):
-        # Send an alert first
         alert = {
             "pod": "test-pod",
             "namespace": "test",
@@ -105,30 +123,3 @@ class TestNetworkPolicyManager:
         npm.isolate_pod("pod2", "ns2")
         log = npm.get_audit_log()
         assert len(log) == 2
-
-
-class TestPodMigration:
-    def test_safe_drain_dry_run(self):
-        from response_engine.pod_migration import PodMigrationManager
-        pmm = PodMigrationManager()
-        result = pmm.safe_drain_and_reschedule("test-pod", "test-ns")
-        assert "steps" in result
-        assert result["node"] is not None
-
-    def test_get_pod_node_dry_run(self):
-        from response_engine.pod_migration import PodMigrationManager
-        pmm = PodMigrationManager()
-        node = pmm.get_pod_node("test-pod", "test-ns")
-        assert node is not None  # Returns mock value in dry-run
-
-    def test_cordon_dry_run(self):
-        from response_engine.pod_migration import PodMigrationManager
-        pmm = PodMigrationManager()
-        result = pmm.cordon_node("test-node")
-        assert result is True
-
-    def test_uncordon_dry_run(self):
-        from response_engine.pod_migration import PodMigrationManager
-        pmm = PodMigrationManager()
-        result = pmm.uncordon_node("test-node")
-        assert result is True

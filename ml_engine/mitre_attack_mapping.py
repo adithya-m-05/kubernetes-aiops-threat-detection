@@ -3,13 +3,12 @@
 MITRE ATT&CK Container Matrix Mapping
 =============================================================================
 Module: ml_engine/mitre_attack_mapping.py
-Agent:  Agent 3 — "The Brain"
 
 Purpose:
     Provides a structured mapping between detected anomaly types and the
     official MITRE ATT&CK Container Matrix technique IDs. This mapping
-    enables the Bayesian predictor to map observed behaviors to known
-    attack chains and predict the attacker's next likely action.
+    gives explainability to detected anomalies by identifying the specific
+    attack technique and tactic associated with a runtime behavior.
 
 Data Source:
     Extracted via browser research from the official MITRE ATT&CK website:

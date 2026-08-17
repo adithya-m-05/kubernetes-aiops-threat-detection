@@ -1,13 +1,12 @@
 """
 =============================================================================
-Feature Extraction — Engineering ML Features from Security Telemetry
+Feature Extraction — Engineering ML Features from Falco Telemetry
 =============================================================================
 Module: data_pipeline/feature_extraction.py
-Agent:  Agent 2 — "The Cleaner"
 
 Purpose:
-    Extracts discriminative features from cleaned telemetry data for use
-    in the ML classification and anomaly detection models (Agent 3).
+    Extracts discriminative features from cleaned Falco telemetry data
+    for use in the autoencoder anomaly detection model.
 
 Feature Categories:
     1. Temporal Features   — Session duration, event frequency, time-of-day

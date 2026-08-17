@@ -1,32 +1,23 @@
 """
 =============================================================================
-Webhook Server — Threat Alert Receiver for Automated Response
+Webhook Server — Threat Alert Receiver and ML Inference API
 =============================================================================
 Module: response_engine/webhook_server.py
-Agent:  Agent 4 — "The Enforcer"
 
 Purpose:
-    Flask-based REST API that receives high-confidence threat alerts from
-    Agent 3's ML engine and triggers automated remediation actions:
-    - Pod isolation via dynamic NetworkPolicy (network_policy_manager.py)
-    - Node cordon and pod migration (pod_migration.py)
+    Flask-based REST API that serves as the central hub for the threat
+    detection system:
+    1. Receives Falco telemetry events and processes them through the
+       ML inference pipeline (autoencoder anomaly detection)
+    2. Receives pre-formed threat alerts from external sources
+    3. Triggers automated remediation (NetworkPolicy pod isolation)
+    4. Serves detection results to the SOC dashboard
 
 API Endpoints:
     POST /api/v1/alert     — Receive threat alert and trigger response
-    GET  /api/v1/status     — Health check and system status
-    GET  /api/v1/history    — View recent alert history
-
-Alert Payload Schema:
-    {
-        "pod": "api-backend-ghi56",
-        "namespace": "aiops-security",
-        "threat_type": "exfiltration",
-        "confidence_score": 0.95,
-        "mitre_technique": "T1041",
-        "anomaly_score": 0.87,
-        "risk_level": "CRITICAL",
-        "predicted_next_stage": "impact"
-    }
+    POST /api/v1/event     — Process a raw Falco event through ML pipeline
+    GET  /api/v1/status    — Health check and system status
+    GET  /api/v1/history   — View recent alert history
 
 Usage:
     python webhook_server.py --port 5000 --confidence-threshold 0.85
@@ -46,10 +37,16 @@ from flask_cors import CORS
 # Import response modules (graceful import for standalone testing)
 try:
     from response_engine.network_policy_manager import NetworkPolicyManager
-    from response_engine.pod_migration import PodMigrationManager
     RESPONSE_MODULES_AVAILABLE = True
 except ImportError:
     RESPONSE_MODULES_AVAILABLE = False
+
+# Import ML pipeline (graceful import)
+try:
+    from ml_engine.pipeline import ThreatDetectionPipeline
+    ML_PIPELINE_AVAILABLE = True
+except ImportError:
+    ML_PIPELINE_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("webhook_server")
@@ -60,25 +57,41 @@ CORS(app)
 
 # Configuration (can be overridden via environment variables)
 CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", "0.85"))
+DRY_RUN = os.environ.get("DRY_RUN", "true").lower() == "true"
+MODEL_DIR = os.environ.get("MODEL_DIR", None)
 MAX_HISTORY = 100
 
 # In-memory alert history (bounded deque)
 alert_history = deque(maxlen=MAX_HISTORY)
+
+# ML Pipeline instance (initialized on first request or at startup)
+ml_pipeline = None
+
+
+def get_ml_pipeline():
+    """Lazy-initialize the ML pipeline."""
+    global ml_pipeline
+    if ml_pipeline is None and ML_PIPELINE_AVAILABLE:
+        ml_pipeline = ThreatDetectionPipeline(
+            model_dir=MODEL_DIR,
+            dry_run=DRY_RUN
+        )
+        logger.info(f"ML Pipeline initialized (model_loaded={ml_pipeline.model_loaded})")
+    return ml_pipeline
 
 
 # =============================================================================
 # Response Action Mapping
 # =============================================================================
 # Maps risk levels to automated response actions.
-# CRITICAL: Full isolation + migration (highest severity)
-# HIGH: Network isolation only (restrictive policy)
-# MEDIUM: Monitoring enhancement (audit-only policy)
+# CRITICAL/HIGH: Network isolation (NetworkPolicy deny-all)
+# MEDIUM: Monitoring enhancement (audit-only)
 # LOW: Log only (no automated action)
 
 RESPONSE_ACTIONS = {
-    "CRITICAL": ["isolate_pod", "cordon_node", "migrate_pods"],
+    "CRITICAL": ["isolate_pod"],
     "HIGH":     ["isolate_pod"],
-    "MEDIUM":   ["apply_audit_policy"],
+    "MEDIUM":   ["log_only"],
     "LOW":      ["log_only"],
 }
 
@@ -110,12 +123,12 @@ def execute_response(alert: Dict[str, Any]) -> Dict[str, Any]:
     Response Protocol:
     1. Determine risk level from alert (default to threshold-based)
     2. Map risk level to response actions
-    3. Execute each action sequentially (order matters for safety)
+    3. Execute each action sequentially
     4. Log results for audit trail
 
     The response is deliberately graduated:
     - We don't isolate pods for LOW/MEDIUM threats (false positive cost)
-    - We DO isolate and migrate for CRITICAL threats (attack in progress)
+    - We DO isolate for HIGH/CRITICAL threats (attack in progress)
     """
     risk_level = alert.get("risk_level", "MEDIUM")
     actions = RESPONSE_ACTIONS.get(risk_level, ["log_only"])
@@ -136,32 +149,12 @@ def execute_response(alert: Dict[str, Any]) -> Dict[str, Any]:
                 })
                 logger.info(f"Pod {pod} isolated via NetworkPolicy")
 
-            elif action == "cordon_node" and RESPONSE_MODULES_AVAILABLE:
-                pmm = PodMigrationManager()
-                node_name = pmm.get_pod_node(pod, namespace)
-                if node_name:
-                    pmm.cordon_node(node_name)
-                    results["actions_taken"].append({
-                        "action": "cordon_node",
-                        "status": "success",
-                        "node": node_name
-                    })
-
-            elif action == "migrate_pods" and RESPONSE_MODULES_AVAILABLE:
-                pmm = PodMigrationManager()
-                migration_result = pmm.safe_drain_and_reschedule(pod, namespace)
-                results["actions_taken"].append({
-                    "action": "migrate_pods",
-                    "status": "success",
-                    "details": migration_result
-                })
-
             elif action == "log_only":
                 results["actions_taken"].append({
                     "action": "log_only",
                     "status": "logged",
                 })
-                logger.info(f"Alert logged (no action): {alert['threat_type']}")
+                logger.info(f"Alert logged (no action): {alert.get('threat_type', 'unknown')}")
 
             else:
                 results["actions_taken"].append({
@@ -191,9 +184,9 @@ def receive_alert():
     """
     POST /api/v1/alert — Receive and process a threat alert.
 
-    This is the primary integration point between Agent 3 (ML Engine)
-    and Agent 4 (Response Engine). The ML engine sends alerts here
-    when it detects a threat above the confidence threshold.
+    This endpoint accepts pre-formed threat alerts (e.g., from external
+    tools or manual testing). For processing raw Falco events through
+    the ML pipeline, use POST /api/v1/event instead.
 
     Returns:
         201: Alert processed successfully with response actions taken
@@ -238,15 +231,74 @@ def receive_alert():
     }), 201
 
 
+@app.route("/api/v1/event", methods=["POST"])
+def process_falco_event():
+    """
+    POST /api/v1/event — Process a raw Falco event through the ML pipeline.
+
+    This is the primary endpoint for real-time threat detection. It accepts
+    a raw Falco telemetry event, runs it through the autoencoder for anomaly
+    detection, maps anomalies to MITRE ATT&CK techniques, and triggers
+    automated response actions if warranted.
+
+    Returns:
+        200: Event processed with detection results
+        400: Invalid event payload
+        503: ML pipeline not available
+    """
+    pipeline = get_ml_pipeline()
+    if pipeline is None:
+        return jsonify({
+            "error": "ML pipeline not available",
+            "hint": "Ensure ml_engine package is installed"
+        }), 503
+
+    data = request.get_json(force=True)
+    if not data:
+        return jsonify({"error": "Empty event payload"}), 400
+
+    # Process through ML pipeline
+    result = pipeline.process_event(data)
+
+    # If anomaly detected, create an alert entry and trigger response
+    if result.get("is_anomaly"):
+        alert_entry = {
+            "pod": result["pod"],
+            "namespace": result["namespace"],
+            "threat_type": result["event_type"],
+            "confidence_score": result["anomaly_score"],
+            "anomaly_score": result["anomaly_score"],
+            "risk_level": result["risk_level"],
+            "mitre_technique": (result["mitre_techniques"][0]["id"]
+                                if result["mitre_techniques"] else None),
+            "received_at": datetime.now(timezone.utc).isoformat(),
+            "source": "ml_pipeline",
+        }
+
+        # Execute response
+        response_result = execute_response(alert_entry)
+        alert_entry["response"] = response_result
+        alert_history.append(alert_entry)
+        result["response"] = response_result
+
+    return jsonify(result), 200
+
+
 @app.route("/api/v1/status", methods=["GET"])
 def health_check():
     """GET /api/v1/status — System health check."""
+    pipeline = get_ml_pipeline()
+    pipeline_stats = pipeline.get_stats() if pipeline else {}
+
     return jsonify({
         "status": "healthy",
-        "service": "AIOps Response Engine",
+        "service": "Kubernetes Threat Detection Engine",
         "confidence_threshold": CONFIDENCE_THRESHOLD,
         "alerts_processed": len(alert_history),
         "response_modules_available": RESPONSE_MODULES_AVAILABLE,
+        "ml_pipeline_available": ML_PIPELINE_AVAILABLE,
+        "ml_pipeline_stats": pipeline_stats,
+        "dry_run": DRY_RUN,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }), 200
 
@@ -264,14 +316,26 @@ def get_history():
 # =============================================================================
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="AIOps Threat Alert Webhook Server")
+    parser = argparse.ArgumentParser(
+        description="Kubernetes Threat Detection Webhook Server"
+    )
     parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--confidence-threshold", type=float, default=0.85)
+    parser.add_argument("--model-dir", type=str, default=None,
+                        help="Directory containing trained autoencoder model")
+    parser.add_argument("--dry-run", action="store_true", default=True,
+                        help="Run in dry-run mode (no real K8s actions)")
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
     CONFIDENCE_THRESHOLD = args.confidence_threshold
+    DRY_RUN = args.dry_run
+    MODEL_DIR = args.model_dir
+
     logger.info(f"Starting webhook server on {args.host}:{args.port}")
     logger.info(f"Confidence threshold: {CONFIDENCE_THRESHOLD}")
+    logger.info(f"Dry-run mode: {DRY_RUN}")
+    logger.info(f"Model directory: {MODEL_DIR or 'None (passthrough mode)'}")
+
     app.run(host=args.host, port=args.port, debug=args.debug)

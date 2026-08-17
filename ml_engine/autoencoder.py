@@ -3,7 +3,6 @@
 Autoencoder — Unsupervised Anomaly Detection for Zero-Day Threats
 =============================================================================
 Module: ml_engine/autoencoder.py
-Agent:  Agent 3 — "The Brain"
 
 Purpose:
     Implements a PyTorch undercomplete autoencoder trained exclusively on
