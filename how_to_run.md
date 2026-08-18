@@ -108,6 +108,8 @@ Refresh or watch [http://localhost:3333](http://localhost:3333) to observe:
 
 This scenario deploys the entire runtime monitoring infrastructure into a local Minikube cluster.
 
+> 📖 **Linux Users:** A complete step-by-step Linux installation and troubleshooting walkthrough is available in [docs/k8s_linux_setup_guide.md](docs/k8s_linux_setup_guide.md).
+
 ### 1. Prerequisites
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Running)
 - [Minikube](https://minikube.sigs.k8s.io/docs/start/) (`winget install Kubernetes.minikube`)
