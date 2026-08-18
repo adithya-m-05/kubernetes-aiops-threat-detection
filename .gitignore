@@ -7,11 +7,15 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Datasets (IMPORTANT)
+# Datasets (external / large — do not commit)
 boa_dataset/
 dvwa_dataset/
 data_pipeline/output/
 data_pipeline/processed/
+
+# Generated telemetry files
+mock_telemetry.jsonl
+temp_training_telemetry.jsonl
 
 # Large files
 *.csv
@@ -20,9 +24,13 @@ data_pipeline/processed/
 *.tar
 *.tar.gz
 
+# Archived legacy modules
+archive/
+
 # Logs & temp
 *.log
 *.tmp
+test_output.txt
 
 # IDE
 .vscode/
@@ -31,5 +39,3 @@ data_pipeline/processed/
 # OS
 .DS_Store
 Thumbs.db
-
-test_output.txt

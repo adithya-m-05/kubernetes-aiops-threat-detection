@@ -1,6 +1,6 @@
 """
 Unit tests for the ML engine modules.
-Tests: Autoencoder, Random Forest (optional), MITRE mapping, Runtime Pipeline.
+Tests: Autoencoder, MITRE mapping, Runtime Pipeline.
 """
 import sys
 import os
@@ -48,37 +48,6 @@ class TestAutoencoder:
         X_anomaly = np.random.randn(50, 10).astype(np.float32) + 5
         flags, scores = detect_anomalies(model, X_anomaly, threshold)
         assert flags.sum() > 0, "Should detect some anomalies in shifted data"
-
-
-class TestRandomForest:
-    def test_pipeline_build(self):
-        from ml_engine.random_forest_classifier import build_pipeline
-        pipeline = build_pipeline()
-        assert pipeline is not None
-
-    def test_train_and_evaluate(self):
-        from ml_engine.random_forest_classifier import train_and_evaluate
-        np.random.seed(42)
-        X = pd.DataFrame(np.random.randn(200, 10),
-                         columns=[f"f{i}" for i in range(10)])
-        y = pd.Series(np.random.choice(
-            ["benign", "ddos", "exfiltration"], 200,
-            p=[0.6, 0.2, 0.2]), name="label")
-        pipeline, metrics, le = train_and_evaluate(X, y)
-        assert 0 <= metrics["accuracy"] <= 1
-        assert len(le.classes_) == 3
-
-    def test_predictions(self):
-        from ml_engine.random_forest_classifier import (
-            train_and_evaluate, predict_threats)
-        np.random.seed(42)
-        X = pd.DataFrame(np.random.randn(200, 5),
-                         columns=[f"f{i}" for i in range(5)])
-        y = pd.Series(np.random.choice(["benign", "attack"], 200), name="label")
-        pipeline, _, le = train_and_evaluate(X, y)
-        labels, probs = predict_threats(pipeline, X[:10], le)
-        assert len(labels) == 10
-        assert probs.shape[0] == 10
 
 
 class TestMITREMapping:

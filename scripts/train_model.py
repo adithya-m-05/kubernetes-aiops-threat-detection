@@ -34,7 +34,6 @@ if PROJECT_ROOT not in sys.path:
 from data_pipeline.mock_data_generator import generate_dataset, save_dataset
 from data_pipeline.preprocessing import preprocess_telemetry
 from data_pipeline.feature_extraction import extract_all_features
-from data_pipeline.data_balancing import normalize_features
 from ml_engine.autoencoder import train_autoencoder, compute_anomaly_scores, determine_threshold
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

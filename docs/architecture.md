@@ -1,14 +1,14 @@
-# System Architecture — Kubernetes Runtime Threat Detection
+# System Architecture — AIOps-Enabled Threat Intelligence
 
 ## 1. End-to-End Data Flow Architecture
 
 ```mermaid
 graph TD
     subgraph Kubernetes Cluster
-        VA[Vulnerable App Testbed] -->|syscalls| F[Falco DaemonSet]
+        VA[Container Workloads] -->|syscalls| F[Falco DaemonSet]
     end
 
-    F -->|JSON alerts| LA[Log Aggregator / Ingestion]
+    F -->|JSON events| LA[Log Aggregator / Ingestion]
     LA -->|Unified NDJSON| PP[Preprocessing Pipeline]
 
     PP -->|Clean DataFrame| FE[Feature Extraction]
@@ -69,7 +69,7 @@ graph LR
 
 | Anomaly Score / Risk Level | Threshold Multiplier | Action Taken | Rationale |
 |---|---|---|---|
-| **CRITICAL** | $> 1.5 \times \text{Threshold}$ | Apply Deny-All NetworkPolicy immediately | High-confidence container escape or root exploit in progress |
-| **HIGH** | $> 1.0 \times \text{Threshold}$ | Apply Deny-All NetworkPolicy immediately | Significant anomaly (e.g. unauthorized interactive shell, exfiltration) |
+| **CRITICAL** | $> 1.5 \times \text{Threshold}$ | Apply Deny-All NetworkPolicy immediately | High-confidence anomaly — significant deviation from normal behavior |
+| **HIGH** | $> 1.0 \times \text{Threshold}$ | Apply Deny-All NetworkPolicy immediately | Notable anomaly (e.g. unauthorized interactive shell, suspicious network activity) |
 | **MEDIUM** | $0.7 - 1.0 \times \text{Threshold}$ | Log alert, monitor entity | Moderate deviation from baseline; avoid false-positive disruption |
 | **LOW / NORMAL** | $\le 0.7 \times \text{Threshold}$ | Standard telemetry log | Normal container operational activity |

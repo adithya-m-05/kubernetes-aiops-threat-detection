@@ -21,7 +21,7 @@ How NetworkPolicy Works:
     - Allows NO ingress (no traffic can reach the pod)
     - Allows NO egress (the pod cannot send traffic)
     - Effectively "quarantines" the pod while keeping it running for
-      forensic analysis
+      investigation
 
 Dependencies: kubernetes (Python client)
 
@@ -108,9 +108,10 @@ class NetworkPolicyManager:
         - This effectively "air-gaps" the pod from the cluster network
 
         Why not delete the pod?
-            Deleting a compromised pod destroys forensic evidence.
+            Deleting a compromised pod destroys evidence.
             Network isolation preserves the pod's state (memory, filesystem)
-            for incident response while preventing further damage.
+            while restricting network connectivity, preserving the
+            opportunity for later investigation.
         """
         policy_name = f"aiops-isolate-{pod_name}"
 

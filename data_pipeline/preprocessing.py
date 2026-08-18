@@ -290,7 +290,6 @@ def deduplicate_events(df: pd.DataFrame) -> pd.DataFrame:
 
     Deduplication is performed on 'event_id' (UUID assigned by the
     log_aggregator). This handles cases where:
-    - The same event is emitted by both Falco and KubeArmor
     - Log shipping retries produce duplicate entries
     - Multiple aggregator instances process the same log file
 
@@ -323,8 +322,8 @@ def preprocess_telemetry(
     Pipeline: Ingest → Validate → Handle Missing → Deduplicate → Output
 
     This function is the primary entry point for downstream modules
-    (feature_extraction.py, data_balancing.py) and can be called
-    programmatically or via the CLI.
+    (feature_extraction.py) and can be called programmatically or
+    via the CLI.
 
     Args:
         input_path:  Path to unified NDJSON telemetry file

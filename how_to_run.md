@@ -1,4 +1,4 @@
-# How to Run the Kubernetes Runtime Threat Detection System
+# How to Run — AIOps-Enabled Threat Intelligence System
 
 This guide outlines **two execution scenarios**:
 
@@ -11,7 +11,7 @@ This guide outlines **two execution scenarios**:
 
 ## Scenario A: Local Simulation & SOC Dashboard Demo (5 Minutes)
 
-This scenario runs the complete machine learning detection engine, automated containment logic (in dry-run mode), and the real-time SOC dashboard locally without needing Minikube.
+This scenario runs the complete detection engine, automated containment logic (in dry-run mode), and the real-time SOC dashboard locally without needing Kubernetes.
 
 ### 1. Prerequisites
 - Python 3.9+
@@ -19,7 +19,7 @@ This scenario runs the complete machine learning detection engine, automated con
 
 ### 2. Environment Setup
 
-Open **PowerShell** (or bash) and execute:
+Open **PowerShell** and execute:
 
 ```powershell
 # Navigate to the project root
@@ -38,15 +38,19 @@ pip install -r requirements.txt
 ```powershell
 # Step 1: Train the Autoencoder Model (generates weights & threshold in models/autoencoder/)
 python scripts/train_model.py --events 2000 --epochs 30
-
-# Step 2: Start the Threat Detection Webhook API (Terminal 1 - keep open)
-python response_engine/webhook_server.py --port 5000 --model-dir models/autoencoder
 ```
 
 Now open a **second terminal**:
 
 ```powershell
-# Step 3: Start the SOC Dashboard UI (Terminal 2 - keep open)
+# Step 2: Start the Threat Detection Webhook API (Terminal 1 — keep open)
+python response_engine/webhook_server.py --port 5000 --model-dir models/autoencoder
+```
+
+Open a **third terminal**:
+
+```powershell
+# Step 3: Start the SOC Dashboard UI (Terminal 2 — keep open)
 npx -y serve dashboard -l 3333
 ```
 
@@ -56,7 +60,7 @@ npx -y serve dashboard -l 3333
 
 ### 5. Simulate Threat Detections
 
-Open a **third terminal** to test the response engine and dashboard live updates:
+Open a **fourth terminal** to send test alerts:
 
 ```powershell
 # 1. Container Escape Simulation (CRITICAL)
@@ -94,7 +98,7 @@ Invoke-RestMethod -Method POST -Uri "http://localhost:5000/api/v1/alert" -Conten
 ```
 
 Refresh or watch [http://localhost:3333](http://localhost:3333) to observe:
-- **Live Alerts Table**: New threat events categorized with confidence & anomaly scores.
+- **Live Alerts Table**: New threat events with confidence & anomaly scores.
 - **Entity Status**: Compromised pods highlighted and isolated.
 - **Response Log**: Automated NetworkPolicy containment actions recorded.
 
@@ -142,7 +146,7 @@ helm install falco falcosecurity/falco `
 kubectl apply -f infrastructure/k8s/falco/
 ```
 
-### 4. Run Telemetry Normalizer & Webhook Engine
+### 4. Run Webhook Engine with Live Kubernetes Enforcement
 
 ```powershell
 # Terminal 1: Start Webhook Server with Kubernetes NetworkPolicy enforcement enabled

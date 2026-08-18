@@ -1,6 +1,6 @@
 """
 Unit tests for the data preprocessing pipeline.
-Tests: JSON ingestion, feature extraction, normalization, PCA, SMOTE.
+Tests: JSON ingestion, schema validation, feature extraction.
 """
 import sys
 import os
@@ -148,34 +148,3 @@ class TestFeatureExtraction:
         assert features.shape[1] >= 5  # At least 5 features
         assert features.isna().sum().sum() == 0  # No NaN after fill
 
-
-# =============================================================================
-# Tests: Data Balancing
-# =============================================================================
-class TestDataBalancing:
-    def test_normalize_minmax(self):
-        from data_pipeline.data_balancing import normalize_features
-        X = pd.DataFrame(np.random.randn(100, 5), columns=[f"f{i}" for i in range(5)])
-        X_norm, scaler = normalize_features(X, method="minmax")
-        assert X_norm.min().min() >= -0.001  # Allow small float errors
-        assert X_norm.max().max() <= 1.001
-
-    def test_normalize_zscore(self):
-        from data_pipeline.data_balancing import normalize_features
-        X = pd.DataFrame(np.random.randn(100, 5), columns=[f"f{i}" for i in range(5)])
-        X_norm, scaler = normalize_features(X, method="zscore")
-        assert abs(X_norm.mean().mean()) < 0.1  # Near-zero mean
-
-    def test_pca_variance(self):
-        from data_pipeline.data_balancing import apply_pca
-        X = pd.DataFrame(np.random.randn(100, 10), columns=[f"f{i}" for i in range(10)])
-        X_pca, pca, analysis = apply_pca(X, variance_threshold=0.90)
-        assert analysis["total_explained_variance"] >= 0.85
-        assert X_pca.shape[1] <= 10
-
-    def test_smote_balancing(self):
-        from data_pipeline.data_balancing import apply_smote
-        X = pd.DataFrame(np.random.randn(100, 5), columns=[f"f{i}" for i in range(5)])
-        y = pd.Series(["benign"] * 80 + ["attack"] * 20, name="label")
-        X_bal, y_bal, stats = apply_smote(X, y)
-        assert y_bal.value_counts()["benign"] == y_bal.value_counts()["attack"]

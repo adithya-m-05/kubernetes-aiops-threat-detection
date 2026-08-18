@@ -1,4 +1,3 @@
-# Agent 3 — ML Engine Package
 """
-ml_engine — Machine Learning Models for Threat Detection and Prediction
+ml_engine — Autoencoder Anomaly Detection and MITRE ATT&CK Mapping
 """

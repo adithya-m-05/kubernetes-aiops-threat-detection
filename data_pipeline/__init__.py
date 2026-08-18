@@ -1,4 +1,3 @@
-# Agent 2 — Data Pipeline Package
 """
-data_pipeline — Feature Extraction and Preprocessing for Security Telemetry
+data_pipeline — Preprocessing and Feature Extraction for Falco Telemetry
 """

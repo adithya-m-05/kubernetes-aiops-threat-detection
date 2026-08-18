@@ -292,7 +292,7 @@ def health_check():
 
     return jsonify({
         "status": "healthy",
-        "service": "Kubernetes Threat Detection Engine",
+        "service": "AIOps Threat Intelligence — Detection Engine",
         "confidence_threshold": CONFIDENCE_THRESHOLD,
         "alerts_processed": len(alert_history),
         "response_modules_available": RESPONSE_MODULES_AVAILABLE,

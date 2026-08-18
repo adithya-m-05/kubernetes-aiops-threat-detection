@@ -205,7 +205,7 @@ def generate_dataset(num_events=5000, attack_ratio=0.2, seed=42):
 
     The default 80/20 benign/malicious split is more balanced than real
     production data (~99/1) to provide sufficient attack samples for
-    initial model training. SMOTE will further balance as needed.
+    evaluation and threshold calibration.
     """
     random.seed(seed)
     events = []

@@ -1,6 +1,6 @@
 """
 =============================================================================
-Configuration — Central Settings for Runtime Threat Detection System
+Configuration — AIOps-Enabled Threat Intelligence System
 =============================================================================
 Module: config.py
 

@@ -115,7 +115,7 @@ MITRE_CONTAINER_TECHNIQUES = {
 # =============================================================================
 # Anomaly-to-MITRE Mapping
 # =============================================================================
-# Maps our detected anomaly event types (from Falco/KubeArmor) to the
+# Maps detected anomaly event types (from Falco telemetry) to the
 # most likely MITRE ATT&CK techniques.
 
 ANOMALY_TO_MITRE = {
@@ -130,22 +130,13 @@ ANOMALY_TO_MITRE = {
     "file_access": ["T1552.001", "T1070"],
 }
 
-# Maps our ML classification labels to MITRE techniques
-LABEL_TO_MITRE = {
-    "ddos": ["T1499", "T1498"],
-    "exfiltration": ["T1041", "T1048"],
-    "lateral_movement": ["T1046", "T1550.001"],
-    "crypto_mining": ["T1496"],
-    "benign": [],
-}
 
 
 # =============================================================================
 # Tactic Kill Chain Order
 # =============================================================================
 # The MITRE ATT&CK kill chain represents the stages of a cyber attack.
-# Tactics are ordered from initial access through impact. This ordered
-# representation enables the Bayesian predictor to model attack progression.
+# Tactics are ordered from initial access through impact.
 
 TACTIC_KILL_CHAIN = [
     "initial_access",

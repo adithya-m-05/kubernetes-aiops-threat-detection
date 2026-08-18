@@ -1,26 +1,26 @@
 """
 =============================================================================
-Autoencoder — Unsupervised Anomaly Detection for Zero-Day Threats
+Autoencoder — Unsupervised Anomaly Detection for Container Runtime Security
 =============================================================================
 Module: ml_engine/autoencoder.py
 
 Purpose:
     Implements a PyTorch undercomplete autoencoder trained exclusively on
-    benign traffic data. Anomalies (including zero-day attacks) are detected
-    by measuring reconstruction error — events that the model cannot
-    reconstruct well are flagged as anomalous.
+    benign runtime telemetry. Anomalies are detected by measuring
+    reconstruction error — events that the model cannot reconstruct well
+    are flagged as anomalous.
 
 Architecture:
     Encoder: input_dim → 128 → 64 → 32 (latent space)
     Decoder: 32 → 64 → 128 → input_dim
 
-Why Autoencoders for Zero-Day Detection?
+Why Autoencoders for Anomaly Detection?
     Traditional supervised classifiers require labeled attack data, making
-    them blind to novel (zero-day) attacks. Autoencoders learn the "normal"
-    data manifold during training. Any input that deviates from this manifold
-    produces high reconstruction error, effectively detecting attacks the
-    model has never seen. This makes autoencoders ideal for zero-day
-    detection in security applications (An & Cho, 2015).
+    them unable to detect previously unseen attack patterns. Autoencoders
+    learn the "normal" data manifold during training. Any input that
+    deviates from this manifold produces high reconstruction error,
+    enabling detection of anomalous runtime behaviors that may correspond
+    to unknown or novel attack techniques (An & Cho, 2015).
 
 Usage:
     python autoencoder.py --train --data features.csv --epochs 50

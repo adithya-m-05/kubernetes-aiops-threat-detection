@@ -258,7 +258,7 @@ def extract_syscall_features(df: pd.DataFrame,
         - Container escape: unshare → mount → chroot
 
         N-gram encoding captures these sequential patterns as countable
-        features that Random Forest can split on effectively.
+        features for the anomaly detection model.
 
     Args:
         df: Cleaned DataFrame with 'syscall' column
