@@ -39,3 +39,6 @@ test_output.txt
 # OS
 .DS_Store
 Thumbs.db
+
+# others
+MASTER_TECHNICAL_INTERVIEW_PREPARATION_GUIDE.md
