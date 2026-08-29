@@ -153,16 +153,17 @@ TACTIC_KILL_CHAIN = [
 
 def get_technique_info(technique_id: str) -> dict:
     """Look up a MITRE technique by ID."""
-    return MITRE_CONTAINER_TECHNIQUES.get(technique_id, {
+    info = MITRE_CONTAINER_TECHNIQUES.get(technique_id, {
         "name": "Unknown", "tactic": "unknown",
         "description": f"Technique {technique_id} not in database"
     })
+    return {"id": technique_id, **info}
 
 
 def map_anomaly_to_techniques(event_type: str) -> list:
     """Map a detected anomaly type to possible MITRE techniques."""
     technique_ids = ANOMALY_TO_MITRE.get(event_type, [])
-    return [{"id": tid, **get_technique_info(tid)} for tid in technique_ids]
+    return [get_technique_info(tid) for tid in technique_ids]
 
 
 def get_tactic_stage(technique_id: str) -> int:

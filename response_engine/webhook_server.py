@@ -33,6 +33,12 @@ from collections import deque
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import sys
+
+# Ensure project root is in sys.path when script is executed directly
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 # Import response modules (graceful import for standalone testing)
 try:
@@ -61,11 +67,30 @@ DRY_RUN = os.environ.get("DRY_RUN", "true").lower() == "true"
 MODEL_DIR = os.environ.get("MODEL_DIR", None)
 MAX_HISTORY = 100
 
+# Runtime telemetry persistence paths
+# Processed events (with ML results) are appended here for auditing and
+# future model retraining. Triggered alerts are stored separately.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RUNTIME_DETECTIONS_PATH = os.path.join(
+    PROJECT_ROOT, "datasets", "falco", "processed", "runtime_detections.jsonl")
+RUNTIME_ALERTS_PATH = os.path.join(
+    PROJECT_ROOT, "datasets", "falco", "processed", "runtime_alerts.jsonl")
+
 # In-memory alert history (bounded deque)
 alert_history = deque(maxlen=MAX_HISTORY)
 
 # ML Pipeline instance (initialized on first request or at startup)
 ml_pipeline = None
+
+
+def _persist_event(filepath: str, data: dict) -> None:
+    """Append a JSON record to a persistent NDJSON file (non-blocking)."""
+    try:
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        with open(filepath, "a") as f:
+            f.write(json.dumps(data, default=str) + "\n")
+    except Exception as e:
+        logger.warning(f"Failed to persist event to {filepath}: {e}")
 
 
 def get_ml_pipeline():
@@ -260,6 +285,9 @@ def process_falco_event():
     # Process through ML pipeline
     result = pipeline.process_event(data)
 
+    # Persist every processed event (with ML results) for auditing/retraining
+    _persist_event(RUNTIME_DETECTIONS_PATH, result)
+
     # If anomaly detected, create an alert entry and trigger response
     if result.get("is_anomaly"):
         alert_entry = {
@@ -269,8 +297,11 @@ def process_falco_event():
             "confidence_score": result["anomaly_score"],
             "anomaly_score": result["anomaly_score"],
             "risk_level": result["risk_level"],
-            "mitre_technique": (result["mitre_techniques"][0]["id"]
-                                if result["mitre_techniques"] else None),
+            "mitre_technique": (
+                result["mitre_techniques"][0].get("id")
+                if result.get("mitre_techniques") and isinstance(result["mitre_techniques"][0], dict)
+                else (result["mitre_techniques"][0] if result.get("mitre_techniques") else None)
+            ),
             "received_at": datetime.now(timezone.utc).isoformat(),
             "source": "ml_pipeline",
         }
@@ -280,6 +311,9 @@ def process_falco_event():
         alert_entry["response"] = response_result
         alert_history.append(alert_entry)
         result["response"] = response_result
+
+        # Persist triggered alert separately
+        _persist_event(RUNTIME_ALERTS_PATH, alert_entry)
 
     return jsonify(result), 200
 

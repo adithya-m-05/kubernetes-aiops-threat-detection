@@ -48,18 +48,39 @@ except ImportError:
     logger.warning("PyTorch not available — pipeline will run without ML inference")
 
 
+# Number of features extracted per single event in live mode.
+# This differs from batch training features (45 windowed/aggregated features)
+# because live per-event inference cannot compute windowed statistics.
+LIVE_FEATURE_DIM = 7
+
+
 class ThreatDetectionPipeline:
     """
     End-to-end runtime threat detection pipeline.
 
     Architecture:
-        Falco Event → Feature Extraction → Autoencoder → Anomaly Score
-            → Threshold Check → MITRE ATT&CK Mapping → Risk Assessment
+        Falco Event → Feature Extraction → Anomaly Scoring → Threshold Check
+            → MITRE ATT&CK Mapping → Risk Assessment → Response Action
 
-    The pipeline operates in two modes:
-    - **Inference mode**: Loads a trained model and processes events in real-time
-    - **Passthrough mode**: If no model is loaded, passes events through with
-      rule-based detection only (useful for testing without training)
+    Dual-Mode Design:
+        The pipeline operates in two distinct scoring modes:
+
+        1. **Live heuristic mode** (per-event, real-time):
+           Extracts 7 per-event features (severity, event_type, syscall_risk,
+           has_network, dst_port_risk, is_external, process_risk) and computes
+           a weighted risk score. This is used for real-time single-event
+           inference because the trained autoencoder requires 45 windowed
+           features that can only be computed from accumulated time-series data.
+
+        2. **Batch autoencoder mode** (offline, training/evaluation):
+           Uses data_pipeline/feature_extraction.py to compute 45 windowed
+           features (temporal, traffic, syscall frequency, behavioral) from
+           accumulated telemetry files. The trained autoencoder detects
+           anomalies via reconstruction error on these rich feature vectors.
+
+    This separation is architecturally sound: windowed features (event_rate,
+    session_duration, syscall_frequency distributions) require multiple events
+    accumulated over a time window — they cannot be computed from a single event.
     """
 
     def __init__(
@@ -85,6 +106,12 @@ class ThreatDetectionPipeline:
         self.dry_run = dry_run
         self.model_loaded = False
 
+        # Dual-mode tracking: whether the loaded model's input_dim matches
+        # the live per-event feature count (LIVE_FEATURE_DIM).
+        # If not, live inference uses heuristic scoring while the autoencoder
+        # remains available for batch evaluation.
+        self.live_inference_mode = "heuristic"  # "heuristic" or "autoencoder"
+
         # Event processing statistics
         self.stats = {
             "events_processed": 0,
@@ -109,7 +136,13 @@ class ThreatDetectionPipeline:
             logger.warning("MITRE ATT&CK mapping module not available")
 
     def _load_model(self, model_dir: str) -> None:
-        """Load a trained autoencoder model and its metadata."""
+        """
+        Load a trained autoencoder model and its metadata.
+
+        After loading, checks whether the model's input dimension matches
+        LIVE_FEATURE_DIM. If not, the model is kept for batch evaluation
+        but live per-event inference will use the heuristic scorer.
+        """
         if not TORCH_AVAILABLE:
             logger.warning("Cannot load model — PyTorch not installed")
             return
@@ -123,6 +156,7 @@ class ThreatDetectionPipeline:
 
         try:
             # Load metadata
+            meta = {}
             if os.path.exists(meta_path):
                 with open(meta_path, "r") as f:
                     meta = json.load(f)
@@ -142,6 +176,19 @@ class ThreatDetectionPipeline:
             self.model.eval()
             self.model_loaded = True
             logger.info(f"Autoencoder model loaded from {model_path}")
+
+            # Check dimension compatibility for live per-event inference
+            if self.input_dim != LIVE_FEATURE_DIM:
+                self.live_inference_mode = "heuristic"
+                logger.info(
+                    f"Model expects {self.input_dim} features (batch/windowed), "
+                    f"but live per-event extraction produces {LIVE_FEATURE_DIM} features. "
+                    f"Live inference will use heuristic scoring. "
+                    f"Autoencoder is available for batch evaluation via CLI."
+                )
+            else:
+                self.live_inference_mode = "autoencoder"
+                logger.info("Model dimensions match live features — using autoencoder for live inference")
 
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
@@ -244,12 +291,20 @@ class ThreatDetectionPipeline:
 
     def compute_anomaly_score(self, features: np.ndarray) -> float:
         """
-        Compute the autoencoder reconstruction error as an anomaly score.
+        Compute anomaly score for a single event.
 
-        If no model is loaded, uses a heuristic risk score based on
-        feature values (passthrough mode).
+        Scoring Mode Selection:
+        - If live_inference_mode == "autoencoder" AND model is loaded AND
+          feature dimensions match: use autoencoder reconstruction error.
+        - Otherwise: use heuristic weighted risk score.
+
+        The heuristic scorer is the primary mode for live per-event inference
+        because the trained autoencoder expects 45 windowed features that
+        require accumulated time-series data (see class docstring).
         """
-        if self.model_loaded and self.model is not None:
+        if (self.live_inference_mode == "autoencoder"
+                and self.model_loaded
+                and self.model is not None):
             try:
                 x = torch.tensor(features, dtype=torch.float32).unsqueeze(0)
                 with torch.no_grad():
@@ -291,11 +346,12 @@ class ThreatDetectionPipeline:
         - HIGH:     anomaly_score > threshold       → Isolate pod
         - MEDIUM:   anomaly_score > threshold * 0.7 → Log and monitor
         - LOW:      anomaly_score <= threshold * 0.7 → Log only
-
-        When running in passthrough mode (no model), the threshold is
-        set heuristically at 0.5.
         """
-        threshold = self.threshold if self.threshold > 0 else 0.5
+        # Set threshold based on scoring mode
+        if self.live_inference_mode == "heuristic":
+            threshold = 0.5
+        else:
+            threshold = self.threshold if self.threshold > 0 else 0.5
 
         if anomaly_score > threshold * 1.5:
             risk_level = "CRITICAL"
@@ -319,10 +375,10 @@ class ThreatDetectionPipeline:
             # Also use technique from event if present
             if event.get("mitre_technique"):
                 technique_info = self._get_technique(event["mitre_technique"])
-                if technique_info.get("name") != "Unknown Technique":
+                if technique_info.get("name") not in ("Unknown", "Unknown Technique"):
                     mitre_techniques = [technique_info] + [
                         t for t in mitre_techniques
-                        if t["id"] != event["mitre_technique"]
+                        if t.get("id") != event["mitre_technique"]
                     ]
 
         return {
@@ -405,6 +461,7 @@ class ThreatDetectionPipeline:
         return {
             **self.stats,
             "model_loaded": self.model_loaded,
+            "live_inference_mode": self.live_inference_mode,
             "threshold": self.threshold,
             "dry_run": self.dry_run,
         }
