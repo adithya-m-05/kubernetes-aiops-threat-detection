@@ -3,7 +3,7 @@
    Fetches live data from the AIOps Webhook Server.
    ═══════════════════════════════════════════════════════ */
 
-(function() {
+(function () {
   const Api = {
     baseUrl: 'http://localhost:5000/api/v1',
     _entitiesMap: new Map(), // Keep track of seen entities and their status
@@ -42,15 +42,15 @@
         const timestamp = a.received_at || new Date().toISOString();
         const anomalyScore = a.anomaly_score !== undefined ? a.anomaly_score : a.confidence_score * 0.9;
         const techniqueId = a.mitre_technique || 'T1190';
-        
+
         let responseAction = 'Log Only';
         if (a.response && a.response.actions_taken && a.response.actions_taken.length > 0) {
-           const act = a.response.actions_taken[0].action;
-           if (act === 'isolate_pod') responseAction = 'Isolation';
-           else if (act === 'log_only') responseAction = 'Log Only';
-           else responseAction = act;
+          const act = a.response.actions_taken[0].action;
+          if (act === 'isolate_pod') responseAction = 'Isolation';
+          else if (act === 'log_only') responseAction = 'Log Only';
+          else responseAction = act;
         } else if (a.action === 'below_threshold') {
-           responseAction = 'Below Threshold';
+          responseAction = 'Below Threshold';
         }
 
         return {
@@ -94,20 +94,16 @@
         e.status = 'safe'; // Will override below if critical/high
       });
 
-      // Update statuses based on recent alerts (within last 1 hour)
-      const now = new Date();
+      // Update statuses based on alerts
       processedAlerts.forEach(a => {
-        const d = new Date(a.timestamp);
-        if ((now - d) < 60 * 60 * 1000) { // 1 hour window
-          const e = this._entitiesMap.get(a.entity);
-          if (e) {
-            e.alerts++;
-            e.lastActivity = a.timestamp > e.lastActivity ? a.timestamp : e.lastActivity;
-            if (a.riskLevel === 'CRITICAL') {
-              e.status = a.responseAction === 'Isolation' ? 'isolated' : 'compromised';
-            } else if (a.riskLevel === 'HIGH' && e.status !== 'isolated') {
-              e.status = 'compromised';
-            }
+        const e = this._entitiesMap.get(a.entity);
+        if (e) {
+          e.alerts++;
+          e.lastActivity = a.timestamp > e.lastActivity ? a.timestamp : e.lastActivity;
+          if (a.riskLevel === 'CRITICAL') {
+            e.status = a.responseAction === 'Isolation' ? 'isolated' : 'compromised';
+          } else if (a.riskLevel === 'HIGH' && e.status !== 'isolated') {
+            e.status = 'compromised';
           }
         }
       });
@@ -137,9 +133,9 @@
       processedAlerts.forEach(a => {
         counts[a.threatType] = (counts[a.threatType] || 0) + 1;
       });
-      
+
       const colors = ['#ff1744', '#ffc107', '#7c4dff', '#448aff', '#00e676', '#00bcd4', '#5a6580'];
-      
+
       const dist = Object.keys(counts).map((type, i) => ({
         label: type,
         value: counts[type],
@@ -163,24 +159,24 @@
       // Bucket by minutes instead of hours if testing, but let's stick to the visual format
       // Actually, for live monitoring, let's just make it bucketed by the last 24 * 5 secs if we want
       // For simplicity, let's keep the mock time series structure for the aesthetic, but inject real alert counts into the latest bucket.
-      
+
       for (let i = points - 1; i >= 0; i--) {
         const t = new Date(now);
         t.setMinutes(t.getMinutes() - i);
         labels.push(t.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }));
-        
+
         // Count alerts in this minute window
         const minuteAlerts = processedAlerts.filter(a => {
           const ad = new Date(a.timestamp);
           return ad.getHours() === t.getHours() && ad.getMinutes() === t.getMinutes();
         });
-        
+
         attacks.push(minuteAlerts.length);
-        
+
         // Count how many had high anomaly scores
         const ans = minuteAlerts.filter(a => a.anomalyScore > 0.7).length;
         anomalies.push(ans);
-        
+
         baseline.push(0); // Baseline is 0 in a real system unless computed
       }
 

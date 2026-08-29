@@ -79,6 +79,24 @@ RUNTIME_ALERTS_PATH = os.path.join(
 # In-memory alert history (bounded deque)
 alert_history = deque(maxlen=MAX_HISTORY)
 
+def _load_initial_alert_history():
+    """Load pre-existing alerts from runtime_alerts.jsonl into memory on startup."""
+    if os.path.exists(RUNTIME_ALERTS_PATH):
+        try:
+            with open(RUNTIME_ALERTS_PATH, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            alert_history.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            pass
+            logger.info(f"Loaded {len(alert_history)} initial alerts from {RUNTIME_ALERTS_PATH}")
+        except Exception as e:
+            logger.warning(f"Failed to load alert history from {RUNTIME_ALERTS_PATH}: {e}")
+
+_load_initial_alert_history()
+
 # ML Pipeline instance (initialized on first request or at startup)
 ml_pipeline = None
 
