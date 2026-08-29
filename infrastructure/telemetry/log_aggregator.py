@@ -167,7 +167,37 @@ def tail_json_log(filepath: str) -> Generator[Dict[str, Any], None, None]:
             return
 
 
-def write_unified_event(event: Dict[str, Any], output_path: str, stdout: bool = False) -> None:
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+
+
+def forward_event(event: Dict[str, Any], forward_url: str) -> bool:
+    """Forward normalized event to the Webhook API endpoint."""
+    if not forward_url:
+        return False
+    try:
+        if REQUESTS_AVAILABLE:
+            resp = requests.post(forward_url, json=event, timeout=3.0)
+            return resp.status_code in (200, 201)
+        else:
+            import urllib.request
+            data = json.dumps(event, default=str).encode("utf-8")
+            req = urllib.request.Request(
+                forward_url,
+                data=data,
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=3.0) as response:
+                return response.status in (200, 201)
+    except Exception as e:
+        logger.warning(f"Failed to forward event to {forward_url}: {e}")
+        return False
+
+
+def write_unified_event(event: Dict[str, Any], output_path: Optional[str], stdout: bool = False) -> None:
     """Write normalized event to output destination."""
     event_json = json.dumps(event, default=str)
     if stdout:
@@ -182,15 +212,17 @@ def write_unified_event(event: Dict[str, Any], output_path: str, stdout: bool = 
 
 def run_aggregator(
     falco_log: Optional[str] = None,
-    output_path: str = "unified_telemetry.jsonl",
-    use_stdin: bool = False
+    output_path: Optional[str] = "unified_telemetry.jsonl",
+    use_stdin: bool = False,
+    forward_url: Optional[str] = None
 ) -> None:
     """Main ingestion and normalization runner."""
     logger.info("=" * 60)
     logger.info("Falco Telemetry Normalizer Starting")
-    logger.info(f"  Falco log:  {falco_log or 'N/A'}")
-    logger.info(f"  Output:     {output_path}")
-    logger.info(f"  Stdin mode: {use_stdin}")
+    logger.info(f"  Falco log:    {falco_log or 'N/A'}")
+    logger.info(f"  Output:       {output_path or 'None'}")
+    logger.info(f"  Forward URL:  {forward_url or 'None'}")
+    logger.info(f"  Stdin mode:   {use_stdin}")
     logger.info("=" * 60)
 
     event_count = 0
@@ -205,6 +237,8 @@ def run_aggregator(
                 unified = parse_falco_event(raw_event)
                 if unified:
                     write_unified_event(unified, output_path, stdout=True)
+                    if forward_url:
+                        forward_event(unified, forward_url)
                     event_count += 1
                     if event_count % 100 == 0:
                         logger.info(f"Processed {event_count} events")
@@ -216,6 +250,8 @@ def run_aggregator(
                 unified = parse_falco_event(raw_event)
                 if unified:
                     write_unified_event(unified, output_path, stdout=True)
+                    if forward_url:
+                        forward_event(unified, forward_url)
                     event_count += 1
 
 
@@ -226,10 +262,12 @@ if __name__ == "__main__":
     parser.add_argument("--falco-log", type=str, default=None, help="Path to Falco NDJSON log")
     parser.add_argument("--output", type=str, default="unified_telemetry.jsonl", help="Output path for NDJSON")
     parser.add_argument("--stdin", action="store_true", help="Read events from stdin")
+    parser.add_argument("--forward-url", type=str, default=None, help="Webhook URL to forward normalized events (e.g. http://localhost:5000/api/v1/event)")
 
     args = parser.parse_args()
     run_aggregator(
         falco_log=args.falco_log,
         output_path=args.output,
-        use_stdin=args.stdin
+        use_stdin=args.stdin,
+        forward_url=args.forward_url
     )

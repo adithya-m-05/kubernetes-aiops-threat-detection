@@ -166,7 +166,7 @@ Exec into the vulnerable testbed container and execute attack behaviors:
 
 ```powershell
 # Get vulnerable pod name
-$POD = kubectl get pods -n aiops-security -l app=vulnerable-app -o jsonpath="{.items[0].metadata.name}"
+$POD = kubectl get pods -n aiops-security -l component=api-backend -o jsonpath="{.items[0].metadata.name}"
 
 # 1. Trigger Shell Execution rule:
 kubectl exec -it $POD -n aiops-security -- /bin/bash

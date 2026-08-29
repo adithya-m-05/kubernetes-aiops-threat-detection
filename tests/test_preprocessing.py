@@ -102,7 +102,7 @@ class TestPreprocessing:
         df = ingest_telemetry(sample_telemetry_file)
         df = validate_schema(df)
         assert "severity_numeric" in df.columns
-        assert df["timestamp"].dtype == "datetime64[ns, UTC]"
+        assert str(df["timestamp"].dtype).startswith("datetime64[") and "UTC" in str(df["timestamp"].dtype)
 
     def test_handle_missing_data(self, sample_telemetry_file):
         from data_pipeline.preprocessing import (

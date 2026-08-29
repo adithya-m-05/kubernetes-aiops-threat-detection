@@ -319,19 +319,25 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Kubernetes Threat Detection Webhook Server"
     )
-    parser.add_argument("--port", type=int, default=5000)
-    parser.add_argument("--host", type=str, default="0.0.0.0")
-    parser.add_argument("--confidence-threshold", type=float, default=0.85)
+    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "5000")))
+    parser.add_argument("--host", type=str, default=os.environ.get("HOST", "0.0.0.0"))
+    parser.add_argument("--confidence-threshold", type=float, default=None,
+                        help="Minimum confidence score to trigger containment (default: env CONFIDENCE_THRESHOLD or 0.85)")
     parser.add_argument("--model-dir", type=str, default=None,
-                        help="Directory containing trained autoencoder model")
-    parser.add_argument("--dry-run", action="store_true", default=True,
+                        help="Directory containing trained autoencoder model (default: env MODEL_DIR)")
+    parser.add_argument("--dry-run", dest="dry_run", action="store_true", default=None,
                         help="Run in dry-run mode (no real K8s actions)")
+    parser.add_argument("--no-dry-run", dest="dry_run", action="store_false",
+                        help="Disable dry-run mode (apply live K8s NetworkPolicies)")
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
-    CONFIDENCE_THRESHOLD = args.confidence_threshold
-    DRY_RUN = args.dry_run
-    MODEL_DIR = args.model_dir
+    if args.confidence_threshold is not None:
+        CONFIDENCE_THRESHOLD = args.confidence_threshold
+    if args.model_dir is not None:
+        MODEL_DIR = args.model_dir
+    if args.dry_run is not None:
+        DRY_RUN = args.dry_run
 
     logger.info(f"Starting webhook server on {args.host}:{args.port}")
     logger.info(f"Confidence threshold: {CONFIDENCE_THRESHOLD}")

