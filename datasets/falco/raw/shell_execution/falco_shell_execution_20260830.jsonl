@@ -1,0 +1,1 @@
+{"pod": "web-frontend-abc12", "namespace": "aiops-security", "severity": "CRITICAL", "event_type": "shell_execution", "syscall": "execve", "process": "bash", "network_metadata": {"dst_port": 80, "dst_ip": "10.244.0.5"}}

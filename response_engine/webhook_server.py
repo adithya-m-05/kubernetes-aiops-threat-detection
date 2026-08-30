@@ -75,6 +75,42 @@ RUNTIME_DETECTIONS_PATH = os.path.join(
     PROJECT_ROOT, "datasets", "falco", "processed", "runtime_detections.jsonl")
 RUNTIME_ALERTS_PATH = os.path.join(
     PROJECT_ROOT, "datasets", "falco", "processed", "runtime_alerts.jsonl")
+# Raw event archival — also persist incoming events into datasets/falco/raw/
+# so the raw dataset folders are populated during live operation.
+RUNTIME_RAW_DIR = os.path.join(PROJECT_ROOT, "datasets", "falco", "raw")
+
+# Scenario classification for raw event archival
+_RAW_SCENARIO_MAP = {
+    "shell_execution": "shell_execution",
+    "sensitive_file_read": "credential_access",
+    "file_access": "credential_access",
+    "container_escape": "shell_execution",
+    "privilege_escalation": "shell_execution",
+    "unexpected_network_connection": "suspicious_network",
+    "network_anomaly": "network_scanning",
+    "crypto_mining": "suspicious_network",
+    "process_execution": "normal",
+}
+
+
+def _persist_raw_event(event: dict) -> None:
+    """Persist the incoming raw event into datasets/falco/raw/<scenario>/."""
+    try:
+        event_type = event.get("event_type", "unknown")
+        scenario = _RAW_SCENARIO_MAP.get(event_type, "normal")
+        # Promote to attack scenario if severity is high
+        severity = event.get("severity", "LOW")
+        if scenario == "normal" and severity in ("HIGH", "CRITICAL"):
+            scenario = "shell_execution"
+        scenario_dir = os.path.join(RUNTIME_RAW_DIR, scenario)
+        os.makedirs(scenario_dir, exist_ok=True)
+        from datetime import date
+        date_str = date.today().strftime("%Y%m%d")
+        raw_file = os.path.join(scenario_dir, f"falco_{scenario}_{date_str}.jsonl")
+        with open(raw_file, "a") as f:
+            f.write(json.dumps(event, default=str) + "\n")
+    except Exception as e:
+        logger.warning(f"Failed to persist raw event: {e}")
 
 # In-memory alert history (bounded deque)
 alert_history = deque(maxlen=MAX_HISTORY)
@@ -302,6 +338,9 @@ def process_falco_event():
 
     # Process through ML pipeline
     result = pipeline.process_event(data)
+
+    # Persist raw incoming event into datasets/falco/raw/<scenario>/
+    _persist_raw_event(data)
 
     # Persist every processed event (with ML results) for auditing/retraining
     _persist_event(RUNTIME_DETECTIONS_PATH, result)

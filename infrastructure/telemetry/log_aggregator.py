@@ -197,6 +197,46 @@ def forward_event(event: Dict[str, Any], forward_url: str) -> bool:
         return False
 
 
+def _classify_event_scenario(event: Dict[str, Any]) -> str:
+    """Classify a normalized event into a raw dataset scenario folder."""
+    event_type = event.get("event_type", "unknown")
+    severity = event.get("severity", "LOW")
+    scenario_map = {
+        "shell_execution": "shell_execution",
+        "sensitive_file_read": "credential_access",
+        "file_access": "credential_access",
+        "container_escape": "shell_execution",
+        "privilege_escalation": "shell_execution",
+        "unexpected_network_connection": "suspicious_network",
+        "network_anomaly": "network_scanning",
+        "crypto_mining": "suspicious_network",
+        "process_execution": "normal",
+    }
+    scenario = scenario_map.get(event_type, "normal")
+    # Promote to attack scenario if severity is high
+    if scenario == "normal" and severity in ("HIGH", "CRITICAL"):
+        scenario = "shell_execution"
+    return scenario
+
+
+def write_raw_event(raw_event: Dict[str, Any], normalized: Dict[str, Any], raw_output_dir: Optional[str]) -> None:
+    """Persist raw Falco JSON into a scenario-categorized subfolder under datasets/falco/raw/."""
+    if not raw_output_dir:
+        return
+    try:
+        scenario = _classify_event_scenario(normalized)
+        scenario_dir = os.path.join(raw_output_dir, scenario)
+        os.makedirs(scenario_dir, exist_ok=True)
+        # Append to a daily file to avoid thousands of tiny files
+        from datetime import date
+        date_str = date.today().strftime("%Y%m%d")
+        raw_file = os.path.join(scenario_dir, f"falco_{scenario}_{date_str}.jsonl")
+        with open(raw_file, "a") as f:
+            f.write(json.dumps(raw_event, default=str) + "\n")
+    except Exception as e:
+        logger.warning(f"Failed to write raw event to {raw_output_dir}: {e}")
+
+
 def write_unified_event(event: Dict[str, Any], output_path: Optional[str], stdout: bool = False) -> None:
     """Write normalized event to output destination."""
     event_json = json.dumps(event, default=str)
@@ -214,7 +254,8 @@ def run_aggregator(
     falco_log: Optional[str] = None,
     output_path: Optional[str] = "unified_telemetry.jsonl",
     use_stdin: bool = False,
-    forward_url: Optional[str] = None
+    forward_url: Optional[str] = None,
+    raw_output_dir: Optional[str] = None
 ) -> None:
     """Main ingestion and normalization runner."""
     logger.info("=" * 60)
@@ -222,6 +263,7 @@ def run_aggregator(
     logger.info(f"  Falco log:    {falco_log or 'N/A'}")
     logger.info(f"  Output:       {output_path or 'None'}")
     logger.info(f"  Forward URL:  {forward_url or 'None'}")
+    logger.info(f"  Raw output:   {raw_output_dir or 'None'}")
     logger.info(f"  Stdin mode:   {use_stdin}")
     logger.info("=" * 60)
 
@@ -237,6 +279,7 @@ def run_aggregator(
                 unified = parse_falco_event(raw_event)
                 if unified:
                     write_unified_event(unified, output_path, stdout=True)
+                    write_raw_event(raw_event, unified, raw_output_dir)
                     if forward_url:
                         forward_event(unified, forward_url)
                     event_count += 1
@@ -250,6 +293,7 @@ def run_aggregator(
                 unified = parse_falco_event(raw_event)
                 if unified:
                     write_unified_event(unified, output_path, stdout=True)
+                    write_raw_event(raw_event, unified, raw_output_dir)
                     if forward_url:
                         forward_event(unified, forward_url)
                     event_count += 1
@@ -263,11 +307,14 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=str, default="unified_telemetry.jsonl", help="Output path for NDJSON")
     parser.add_argument("--stdin", action="store_true", help="Read events from stdin")
     parser.add_argument("--forward-url", type=str, default=None, help="Webhook URL to forward normalized events (e.g. http://localhost:5000/api/v1/event)")
+    parser.add_argument("--raw-output-dir", type=str, default=None,
+                        help="Directory to persist raw Falco events by scenario (e.g. datasets/falco/raw)")
 
     args = parser.parse_args()
     run_aggregator(
         falco_log=args.falco_log,
         output_path=args.output,
         use_stdin=args.stdin,
-        forward_url=args.forward_url
+        forward_url=args.forward_url,
+        raw_output_dir=args.raw_output_dir
     )

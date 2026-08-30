@@ -262,13 +262,17 @@ class ThreatDetectionPipeline:
             # Process risk scoring
             risky_processes = {"bash", "sh", "curl", "wget", "nmap", "nc",
                                "netcat", "python", "perl", "xmrig", "minerd",
-                               "cpuminer", "nsenter", "runc"}
+                               "cpuminer", "nsenter", "runc", "dash", "zsh",
+                               "csh", "ksh", "apt", "apt-get", "apk", "pip"}
             safe_processes = {"nginx", "redis-server", "node", "java",
-                              "postgres", "mysqld"}
-            process = event.get("process", "")
-            if process in risky_processes:
+                              "postgres", "mysqld", "http.server"}
+            process = event.get("process", "").strip()
+            # Use the basename of the first token for matching
+            # e.g., "bash -c cat /etc/shadow" → "bash"
+            process_base = process.split()[0].rsplit("/", 1)[-1] if process else ""
+            if process_base in risky_processes or any(rp in process for rp in risky_processes):
                 process_risk = 2
-            elif process in safe_processes:
+            elif process_base in safe_processes:
                 process_risk = 0
             else:
                 process_risk = 1
@@ -327,7 +331,9 @@ class ThreatDetectionPipeline:
         """
         # features: [severity, event_type, syscall_risk, has_network,
         #            dst_port_risk, is_external, process_risk]
-        weights = np.array([0.20, 0.10, 0.25, 0.05, 0.15, 0.15, 0.10])
+        # Weights rebalanced to emphasize severity and syscall risk which
+        # are the strongest real-attack indicators from Falco telemetry.
+        weights = np.array([0.25, 0.10, 0.25, 0.05, 0.10, 0.10, 0.15])
         max_values = np.array([3, 9, 3, 1, 3, 1, 2])
 
         # Normalize each feature to [0, 1] range
@@ -348,10 +354,13 @@ class ThreatDetectionPipeline:
         - LOW:      anomaly_score <= threshold * 0.7 → Log only
         """
         # Set threshold based on scoring mode
+        # Lowered from 0.5 to 0.35 so that real Falco attack alerts
+        # (shell spawning, credential reads, network scans) are properly
+        # flagged as anomalies instead of silently passing as LOW.
         if self.live_inference_mode == "heuristic":
-            threshold = 0.5
+            threshold = 0.35
         else:
-            threshold = self.threshold if self.threshold > 0 else 0.5
+            threshold = self.threshold if self.threshold > 0 else 0.35
 
         if anomaly_score > threshold * 1.5:
             risk_level = "CRITICAL"
